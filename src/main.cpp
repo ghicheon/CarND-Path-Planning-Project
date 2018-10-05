@@ -9,7 +9,7 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
 
-#include "../../spline.h"
+#include "./spline.h"
 
 int cnt=0;
 
@@ -257,6 +257,16 @@ int main() {
                     json msgJson;
 
 
+        printf("XXXXXXXXXXXXXXXstart--------------%f %f %d\n", end_path_s,end_path_d, prev_size);
+
+        for(int i=0;i<previous_path_x.size();i++)
+        {
+             cout << "ausx_previous_path_" << i << ": " << previous_path_x[i] << endl;
+        }
+
+        printf("XXXXXXXXXXXXXXXend--------------%f %f %d\n", end_path_s,end_path_d, prev_size);
+
+
 
 
                     //TODO:define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
@@ -310,24 +320,10 @@ int main() {
                         ref_vel += 0.224;
                     }
 
-
-
-
-
-#if 0
-
-double dist_inc = 0.5;
-    for(int i = 0; i < 50; i++)
-    {
-          next_x_vals.push_back(car_x+(dist_inc*i)*cos(deg2rad(car_yaw)));
-          next_y_vals.push_back(car_y+(dist_inc*i)*sin(deg2rad(car_yaw)));
-    }
-#endif
-
+//////////////////////////////////////////////////////////////////////////////////////////////
 #if 1
                     vector<double> ptsx;
                     vector<double> ptsy;
-
 
                     double ref_x = car_x;
                     double ref_y = car_y;
@@ -360,11 +356,12 @@ double dist_inc = 0.5;
                         ptsy.push_back(ref_y);
                     }
 
-
-                    vector<double> next_wp0 = getXY(car_s+30,(2+4*lane) ,map_waypoints_s, map_waypoints_x,map_waypoints_y);
-                    vector<double> next_wp1 = getXY(car_s+60,(2+4*lane) ,map_waypoints_s, map_waypoints_x,map_waypoints_y);
-                    vector<double> next_wp2 = getXY(car_s+90,(2+4*lane) ,map_waypoints_s, map_waypoints_x,map_waypoints_y);
-
+                    vector<double> next_wp0 = 
+                            getXY(car_s+30,(2+4*lane) ,map_waypoints_s, map_waypoints_x,map_waypoints_y);
+                    vector<double> next_wp1 = 
+                            getXY(car_s+60,(2+4*lane) ,map_waypoints_s, map_waypoints_x,map_waypoints_y);
+                    vector<double> next_wp2 = 
+                            getXY(car_s+90,(2+4*lane) ,map_waypoints_s, map_waypoints_x,map_waypoints_y);
 
                     ptsx.push_back(next_wp0[0]);
                     ptsx.push_back(next_wp1[0]);
@@ -388,12 +385,12 @@ double dist_inc = 0.5;
                     vector<double> next_x_vals;
                     vector<double> next_y_vals;
 
-                    for(int i=0; i<previous_path_x.size(); i++)
+                    for(int i=0; i < previous_path_x.size(); i++)
                     {
                         next_x_vals.push_back(previous_path_x[i]);
-                       next_y_vals.push_back(previous_path_y[i]);
+                        next_y_vals.push_back(previous_path_y[i]);
 
-                        printf("prev: added... %f %f\n", previous_path_x[i],previous_path_y[i]);
+                        std::cout << "    prev: added... " << previous_path_x[i] << "  " << previous_path_y[i];
                     }
 
                     double target_x=30.0;
@@ -418,15 +415,12 @@ double dist_inc = 0.5;
                         y_point += ref_y;
                         next_x_vals.push_back(x_point);
                         next_y_vals.push_back(y_point);
-                        printf("added... %f %f\n", x_point,y_point);
+                        //std::cout << "added... " << x_point  << "   "  << y_point  << std::endl;
                     }
-
-
 #endif
-
-
                     printf("cnt:%d   %d %d\n", cnt, next_x_vals.size(),next_y_vals.size());
                     cnt++;
+//////////////////////////////////////////////////////////////////////////////////////////////
 
                     msgJson["next_x"] = next_x_vals;
                     msgJson["next_y"] = next_y_vals;
@@ -479,3 +473,15 @@ double dist_inc = 0.5;
     h.run();
 
 }
+
+
+
+#if 0
+
+double dist_inc = 0.5;
+    for(int i = 0; i < 50; i++)
+    {
+          next_x_vals.push_back(car_x+(dist_inc*i)*cos(deg2rad(car_yaw)));
+          next_y_vals.push_back(car_y+(dist_inc*i)*sin(deg2rad(car_yaw)));
+    }
+#endif
