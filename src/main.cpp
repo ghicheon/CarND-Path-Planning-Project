@@ -13,6 +13,15 @@
 
 int cnt=0;
 
+#define MAX_SPEED 200
+
+int target_lane[]={0,1,2,1};
+int counter = 0;
+
+int lane=1;
+float speed=0; //current speed(reference velocity).
+float speed_multiplier=1;
+
 using namespace std;
 
 // for convenience
@@ -173,9 +182,6 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
 
 }
 
-int lane=1;
-//float ref_vel=49.5;
-float ref_vel=0;
 
 int main() {
     uWS::Hub h;
@@ -213,7 +219,6 @@ int main() {
         map_waypoints_dx.push_back(d_x);
         map_waypoints_dy.push_back(d_y);
     }
-
 
     h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
     uWS::OpCode opCode) {
@@ -261,7 +266,7 @@ int main() {
 
         for(int i=0;i<previous_path_x.size();i++)
         {
-             cout << "ausx_previous_path_" << i << ": " << previous_path_x[i] << endl;
+             cout << "previous_path_" << i << ": " << previous_path_x[i] << endl;
         }
 
         printf("XXXXXXXXXXXXXXXend--------------%f %f %d\n", end_path_s,end_path_d, prev_size);
@@ -290,34 +295,27 @@ int main() {
 
                             check_car_s +=((double)prev_size*0.02*check_speed) ;
 
+
+
                             if((check_car_s > car_s) &&
                                (check_car_s-car_s) < 30) 
                             {
-                                    //ref_vel=29.5;
                                     too_close=true;
-                                    switch(lane)
-                                    {
-                                        case 0:
-                                                lane=1;
-                                                break;
-                                        case 1:
-                                                lane=2;
-                                                break;
-                                        case 2:
-                                                lane=0;
-                                                break;
-                                    }
+                                    lane = target_lane[(counter++)%4];
                             }
                         }
                     }
 
                     if(too_close)
                     {
-                        ref_vel -= 0.224;
+                        speed -= 0.224 * speed_multiplier;
+                        speed_multiplier -=2;
+                        
                     }
-                    else if(ref_vel < 49.5)
+                    else if(speed < MAX_SPEED)
                     {
-                        ref_vel += 0.224;
+                        speed += 0.224 * speed_multiplier;
+                        speed_multiplier +=2;
                     }
 
 //////////////////////////////////////////////////////////////////////////////////////////////
@@ -401,7 +399,7 @@ int main() {
                     double x_add_on=0;
                     for(int i=1; i<= 50-previous_path_x.size();i++)
                     {
-                        double N = (target_dist/(.02*ref_vel/2.24));
+                        double N = (target_dist/(.02*speed/2.24));
                         double x_point = x_add_on+(target_x)/N;
                         double y_point = s(x_point);
                         x_add_on = x_point;
@@ -415,10 +413,10 @@ int main() {
                         y_point += ref_y;
                         next_x_vals.push_back(x_point);
                         next_y_vals.push_back(y_point);
-                        //std::cout << "added... " << x_point  << "   "  << y_point  << std::endl;
+                        std::cout << "added... " << x_point  << "   "  << y_point  << std::endl;
                     }
 #endif
-                    printf("cnt:%d   %d %d\n", cnt, next_x_vals.size(),next_y_vals.size());
+                    std::cout << "cnt-----------------------:" <<  cnt   << std::endl;
                     cnt++;
 //////////////////////////////////////////////////////////////////////////////////////////////
 
