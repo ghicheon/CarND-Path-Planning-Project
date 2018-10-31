@@ -47,6 +47,8 @@ def cost(traj, target_vehicle, delta, T, predictions):
     d_dot = to_equation(d_dot_coeffs)
     d_ddot = to_equation(d_dotdot_coeffs)
     #---------------------------------------------------------
+    nearest = nearest_approach_to_any_vehicle(traj, predictions)
+    #---------------------------------------------------------
 
     """
     Penalizes trajectories that span a duration which is longer or 
@@ -62,9 +64,9 @@ def cost(traj, target_vehicle, delta, T, predictions):
     
     #S = [f(t) for f in get_f_and_N_derivatives(s_coeffs, 2)]
     S = []
-    S.append( s(t))
-    S.append( v(t))
-    S.append( a(t))
+    S.append(s(t))
+    S.append(v(t))
+    S.append(a(t))
 
     sdiff_cost = 0
     for actual, expected, sigma in zip(S, s_targ, SIGMA_S):
@@ -75,8 +77,10 @@ def cost(traj, target_vehicle, delta, T, predictions):
     Penalizes trajectories whose d coordinate (and derivatives) 
     differ from the goal.
     """
-
-    D = [d(t), d_dot(t), d_ddot(t)]
+    D = [] 
+    D.append(d(t))
+    D.append(d_dot(t) )
+    D.append(d_ddot(t))
     
     ddiff_cost = 0
     for actual, expected, sigma in zip(D, d_targ, SIGMA_D):
@@ -88,7 +92,6 @@ def cost(traj, target_vehicle, delta, T, predictions):
     """
     collision_cost = 0.0
 
-    nearest = nearest_approach_to_any_vehicle(traj, predictions)
     if nearest < 2*VEHICLE_RADIUS: 
         collision_cost = 1.0
     else : 
@@ -97,7 +100,6 @@ def cost(traj, target_vehicle, delta, T, predictions):
     """
     Penalizes getting close to other vehicles.
     """
-    nearest = nearest_approach_to_any_vehicle(traj, predictions)
     buffer_cost =  logistic(2*VEHICLE_RADIUS / nearest)
     
     #def stays_on_road_cost(traj, target_vehicle, delta, T, predictions):
@@ -106,7 +108,7 @@ def cost(traj, target_vehicle, delta, T, predictions):
     Rewards high average speeds.
     """
     avg_v = float(s(t)) / t
-    targ_s, _, _, _, _, _ = predictions[target_vehicle].state_in(t)
+    targ_s, _, _, _, _, _ = target
     targ_v = float(targ_s) / t
     efficiency_cost = logistic(2*float(targ_v - avg_v) / avg_v)
 
@@ -123,6 +125,7 @@ def cost(traj, target_vehicle, delta, T, predictions):
     total_accel_cost =  logistic(acc_per_second / EXPECTED_ACC_IN_ONE_SEC )
     
     #max_accel_cost(traj, target_vehicle, delta, T, predictions):-------------------------
+
     all_accs = [a(float(T)/100 * i) for i in range(100)]
     max_acc = max(all_accs, key=abs)
 
@@ -149,8 +152,6 @@ def cost(traj, target_vehicle, delta, T, predictions):
     jerk_per_second = total_jerk / T
     total_jerk_cost = logistic(jerk_per_second / EXPECTED_JERK_IN_ONE_SEC )
 
-
-
     allcost=[timediff_cost,   sdiff_cost,       ddiff_cost ,     collision_cost  , buffer_cost ,
             efficiency_cost, total_accel_cost, max_accel_cost , total_jerk_cost , max_jerk_cost ]
 
@@ -159,10 +160,12 @@ def cost(traj, target_vehicle, delta, T, predictions):
     weights =[ 10000000, 1, 1, 1, 1,
                1, 1, 1, 1, 1]
 
+    assert( len(allcost) == len(weights) )
+
     summ = 0 
 
     i=0
-    while i < 10:
+    while i < len(allcost):
         summ += (allcost[i] * weights[i])
         i += 1
 
