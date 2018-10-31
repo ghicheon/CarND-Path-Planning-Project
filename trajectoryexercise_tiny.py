@@ -1,15 +1,14 @@
-from helpers import logistic, to_equation, differentiate, nearest_approach_to_any_vehicle,  Vehicle, show_trajectory
-
-from constants import *
+#from helpers import logistic, to_equation, differentiate, nearest_approach_to_any_vehicle,  Vehicle, show_trajectory
+#from constants import *
+#from ptg import PTG
+#from cost_functions import *
 import numpy as np
-from ptg import PTG
 import random
-from cost_functions import *
 from math import sqrt, exp
 from matplotlib import pyplot as plt
 
 N_SAMPLES = 10
-SIGMA_S = [10.0, 4.0, 2.0] # s, s_dot, s_double_dot
+SIGMA_S = [10.0, 4.0, 2.0] # s, s_dot_coeffs, s_double_dot
 SIGMA_D = [1.0, 1.0, 1.0]
 SIGMA_T = 2.0
 
@@ -24,30 +23,48 @@ VEHICLE_RADIUS = 1.5 # model vehicle as circle to simplify collision detection
 ###############################################################################################
 # COST FUNCTIONS
 def cost(traj, target_vehicle, delta, T, predictions):
+    s_coeffs, d_coeffs, t = traj
+
+    target = predictions[target_vehicle].state_in(t)
+    target = list(np.array(target) + np.array(delta))
+    s_targ = target[:3]
+    d_targ = target[3:]
+
+    #---------------------------------------------------------
+    s_dot_coeffs       = differentiate(s_coeffs)
+    s_dotdot_coeffs    = differentiate(s_dot_coeffs)
+    s_dotdotdot_coeffs =  differentiate(s_dotdot_coeffs)
+
+    s    = to_equation(s_coeffs)
+    v    = to_equation(s_dot_coeffs)
+    a    = to_equation(s_dotdot_coeffs)
+    jerk = to_equation(s_dotdotdot_coeffs)
+    #---------------------------------------------------------
+    d_dot_coeffs = differentiate(d_coeffs)
+    d_dotdot_coeffs = differentiate(d_dot_coeffs)
+
+    d = to_equation(d_coeffs)
+    d_dot = to_equation(d_dot_coeffs)
+    d_ddot = to_equation(d_dotdot_coeffs)
+    #---------------------------------------------------------
+
     """
     Penalizes trajectories that span a duration which is longer or 
     shorter than the duration requested.
     """
-    s_coeffs, d_coeffs, t = traj
-
     timediff_cost= logistic(float(abs(t-T)) / T)
+
 
     """
     Penalizes trajectories whose s coordinate (and derivatives) 
     differ from the goal.
     """
-    target = predictions[target_vehicle].state_in(t)
-    target = list(np.array(target) + np.array(delta))
-    s_targ = target[:3]
     
     #S = [f(t) for f in get_f_and_N_derivatives(s_coeffs, 2)]
     S = []
-    S.append( to_equation(s_coeffs)(t) )
-    for i in range(2):
-        s_coeffs = differentiate(s_coeffs)
-        f =  to_equation(s_coeffs)
-        S.append(f(t))
-
+    S.append( s(t))
+    S.append( v(t))
+    S.append( a(t))
 
     sdiff_cost = 0
     for actual, expected, sigma in zip(S, s_targ, SIGMA_S):
@@ -58,18 +75,9 @@ def cost(traj, target_vehicle, delta, T, predictions):
     Penalizes trajectories whose d coordinate (and derivatives) 
     differ from the goal.
     """
-    d_dot_coeffs = differentiate(d_coeffs)
-    d_ddot_coeffs = differentiate(d_dot_coeffs)
-
-    d = to_equation(d_coeffs)
-    d_dot = to_equation(d_dot_coeffs)
-    d_ddot = to_equation(d_ddot_coeffs)
 
     D = [d(t), d_dot(t), d_ddot(t)]
     
-    target = predictions[target_vehicle].state_in(t)
-    target = list(np.array(target) + np.array(delta))
-    d_targ = target[3:]
     ddiff_cost = 0
     for actual, expected, sigma in zip(D, d_targ, SIGMA_D):
         diff = float(abs(actual-expected))
@@ -97,17 +105,13 @@ def cost(traj, target_vehicle, delta, T, predictions):
     """
     Rewards high average speeds.
     """
-    s_coeffs, _, t = traj
-    s = to_equation(s_coeffs)
     avg_v = float(s(t)) / t
     targ_s, _, _, _, _, _ = predictions[target_vehicle].state_in(t)
     targ_v = float(targ_s) / t
     efficiency_cost = logistic(2*float(targ_v - avg_v) / avg_v)
 
     #total_accel_cost(traj, target_vehicle, delta, T, predictions)------------------------
-    s_dot = differentiate(s_coeffs)
-    s_d_dot = differentiate(s_dot)
-    a = to_equation(s_d_dot)
+
     total_acc = 0
     dt = float(T) / 100.0
     for i in range(100):
@@ -119,9 +123,6 @@ def cost(traj, target_vehicle, delta, T, predictions):
     total_accel_cost =  logistic(acc_per_second / EXPECTED_ACC_IN_ONE_SEC )
     
     #max_accel_cost(traj, target_vehicle, delta, T, predictions):-------------------------
-    s_dot = differentiate(s_coeffs)
-    s_d_dot = differentiate(s_dot)
-    a = to_equation(s_d_dot)
     all_accs = [a(float(T)/100 * i) for i in range(100)]
     max_acc = max(all_accs, key=abs)
 
@@ -131,10 +132,6 @@ def cost(traj, target_vehicle, delta, T, predictions):
     
 
     #max_jerk_cost(traj, target_vehicle, delta, T, predictions): -----------------------------
-    s_dot = differentiate(s_coeffs)
-    s_d_dot = differentiate(s_dot)
-    jerk = differentiate(s_d_dot)
-    jerk = to_equation(jerk)
     all_jerks = [jerk(float(T)/100 * i) for i in range(100)]
     max_jerk = max(all_jerks, key=abs)
 
@@ -143,9 +140,6 @@ def cost(traj, target_vehicle, delta, T, predictions):
         max_jerk_cost = 1
 
     #total_jerk_cost(traj, target_vehicle, delta, T, predictions): ------------------------------
-    s_dot = differentiate(s_coeffs)
-    s_d_dot = differentiate(s_dot)
-    jerk = to_equation(differentiate(s_d_dot))
     total_jerk = 0
     dt = float(T) / 100.0
     for i in range(100):
@@ -160,14 +154,16 @@ def cost(traj, target_vehicle, delta, T, predictions):
     allcost=[timediff_cost,   sdiff_cost,       ddiff_cost ,     collision_cost  , buffer_cost ,
             efficiency_cost, total_accel_cost, max_accel_cost , total_jerk_cost , max_jerk_cost ]
 
-    weights =[ 1, 5, 5, 1000, 100,
-               1, 100, 100, 1, 1]
+    #weights =[ 1, 5, 5, 1000, 100,
+    #           1, 100, 100, 1, 1]
+    weights =[ 10000000, 1, 1, 1, 1,
+               1, 1, 1, 1, 1]
 
     summ = 0 
 
     i=0
     while i < 10:
-        summ = allcost[i] * weights[i]
+        summ += (allcost[i] * weights[i])
         i += 1
 
     return summ #sum all costs
@@ -189,7 +185,7 @@ def PTG(start_s, start_d, target_vehicle, delta, T, predictions):
     Finds the best trajectory according to WEIGHTED_COST_FUNCTIONS (global).
 
     arguments:
-     start_s - [s, s_dot, s_ddot]
+     start_s - [s, s_dot_coeffs, s_ddot]
 
      start_d - [d, d_dot, d_ddot]
 
@@ -207,7 +203,7 @@ def PTG(start_s, start_d, target_vehicle, delta, T, predictions):
 
      predictions - dictionary of {v_id : vehicle }. Each vehicle has a method 
        vehicle.state_in(time) which returns a length 6 array giving that vehicle's
-       expected [s, s_dot, s_ddot, d, d_dot, d_ddot] state at that time.
+       expected [s, s_dot_coeffs, s_ddot, d, d_dot, d_ddot] state at that time.
 
     return:
      (best_s, best_d, best_t) where best_s are the 6 coefficients representing s(t)
