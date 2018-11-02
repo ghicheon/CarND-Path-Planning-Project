@@ -5,6 +5,7 @@
 #include <iostream>
 #include <thread>
 #include <vector>
+#include <map>
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
@@ -13,9 +14,27 @@
 
 int cnt=0;
 
+double    g_prev_s_;
+double    g_prev_d_;
+//random.seed(0)
+
+int N_SAMPLES = 10;
+double SIGMA_S[3] = {10.0, 4.0, 2.0}; // s, s_dot_coeffs, s_double_dot
+double SIGMA_D[3] = {1.0, 1.0, 1.0};
+double SIGMA_T = 2.0;
+
+double MAX_JERK = 10; // m/s/s/s
+double MAX_ACCEL= 10; // m/s/s
+
+double EXPECTED_JERK_IN_ONE_SEC = 2;//  m/s/s
+double EXPECTED_ACC_IN_ONE_SEC = 1; //  m/s
+
+double SPEED_LIMIT = 30;
+double VEHICLE_RADIUS = 1.5; // model vehicle as circle to simplify collision detection
+
 #define MAX_SPEED 200
 
-int target_lane[]={0,1,2,1};
+int target_lane[4]={0,1,2,1};
 int counter = 0;
 
 int lane=1;
@@ -181,6 +200,167 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
     return {x,y};
 
 }
+/////////////////////////////////////////////////////////////////////////
+
+class Vehicle {
+    public:
+
+    vector<double> state;
+
+    Vehicle( double s, double s_ , double s__ , double d, double d_, double d__ )
+    {
+        state.push_back(s);
+        state.push_back(s_);
+        state.push_back(s__);
+        state.push_back(d);
+        state.push_back(d_);
+        state.push_back(d__);
+    }
+    ~Vehicle() {}
+
+    vector<double>  state_in(double t) 
+    {
+        //vector<double> s = start_state[:3]
+        //vector<double> d = start_state[3:]
+        //state[0+]: s
+        //state[3+]: d
+        state.push_back( state[0] + (state[1] * t) + state[2] * t*t / 2.0 );
+        state.push_back( state[1] + state[2] * t );
+        state.push_back( state[2] );
+        state.push_back( state[3+0] + (state[3+1] * t) + state[3+2] * t*t / 2.0 );
+        state.push_back( state[3+1] + (state[3+2] * t) );
+        state.push_back( state[3+2] );
+
+        return state;
+    }
+
+};
+
+#include <iostream>
+#include <fstream>
+#include <cmath>
+#include <vector>
+
+#include "Eigen-3.3/Eigen/Dense"
+
+//#include "Eigen-3.3/Eigen/Core"
+//#include "Eigen-3.3/Eigen/QR"
+
+using namespace std;
+using Eigen::MatrixXd;
+using Eigen::VectorXd;
+
+vector<double> JMT(vector< double> start, vector <double> end, double T)
+{
+    /*
+    Calculate the Jerk Minimizing Trajectory that connects the initial state
+    to the final state in time T.
+
+    INPUTS
+
+    start - the vehicles start location given as a length three array
+        corresponding to initial values of [s, s_dot, s_double_dot]
+
+    end   - the desired end state for vehicle. Like "start" this is a
+        length three array.
+
+    T     - The duration, in seconds, over which this maneuver should occur.
+
+    OUTPUT 
+    an array of length 6, each value corresponding to a coefficent in the polynomial 
+    s(t) = a_0 + a_1 * t + a_2 * t**2 + a_3 * t**3 + a_4 * t**4 + a_5 * t**5
+
+    EXAMPLE
+
+    > JMT( [0, 10, 0], [10, 10, 0], 1)
+    [0.0, 10.0, 0.0, 0.0, 0.0, 0.0]
+    */
+    
+    MatrixXd A = MatrixXd(3, 3);
+    A << T*T*T, T*T*T*T, T*T*T*T*T,
+                3*T*T, 4*T*T*T,5*T*T*T*T,
+                6*T, 12*T*T, 20*T*T*T;
+        
+    MatrixXd B = MatrixXd(3,1);     
+    B << end[0]-(start[0]+start[1]*T+.5*start[2]*T*T),
+                end[1]-(start[1]+start[2]*T),
+                end[2]-start[2];
+                
+    MatrixXd Ai = A.inverse();
+    
+    MatrixXd C = Ai*B;
+    
+    vector <double> result = {start[0], start[1], .5*start[2]};
+    for(int i = 0; i < C.size(); i++)
+    {
+        result.push_back(C.data()[i]);
+    }
+    
+    return result;
+    
+}
+
+
+vector<vector<double>> 
+PTG( vector<double> start_s, vector<double> start_d, int target_vehicle,vector<double> delta,
+          int T,  map<unsigned int, Vehicle*>  predictions )
+{
+        vector<vector<double>>  tr ;
+
+        //for(;;)
+        vector<double> s_goal;
+        s_goal.push_back(start_s[0]+200); //XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+        s_goal.push_back(start_s[1]);
+        s_goal.push_back(start_s[2]);
+
+        vector<double> d_goal;
+        d_goal.push_back( target_lane[(int)start_d[0]] );
+        d_goal.push_back(start_d[1]);
+        d_goal.push_back(start_d[2]);
+
+        vector<double>  s_coefficients = JMT(start_s, s_goal, T);
+        vector<double>  d_coefficients = JMT(start_d, d_goal, T);
+
+        tr.push_back(s_coefficients);
+        tr.push_back(d_coefficients);
+        return tr;
+
+#if 0
+    vector<Vehicle> target = predictions[target_vehicle];
+
+    //generate alternative goals
+    vectorall_goals = []
+    timestep = 0.5
+    t = T - 4 * timestep
+    while t <= T + 4 * timestep:
+        target_state = np.array(target.state_in(t)) + np.array(delta)
+        goal_s = target_state[:3]
+        goal_d = target_state[3:]
+        goals = [(goal_s, goal_d, t)]
+        for _ in range(N_SAMPLES):
+            perturbed = perturb_goal(goal_s, goal_d)
+            goals.append((perturbed[0], perturbed[1], t))
+        all_goals += goals
+        t += timestep
+    
+    minimum = 9999999999
+    best = None
+    for goal in all_goals:
+        s_goal, d_goal, t = goal
+        s_coefficients = JMT(start_s, s_goal, t)
+        d_coefficients = JMT(start_d, d_goal, t)
+        tr = tuple([s_coefficients, d_coefficients, t])
+        curr = cost(tr, target_vehicle, delta, T, predictions )
+        if minimum > curr:
+            minimum = curr
+            best  = tr
+
+    return best
+#endif
+
+}
+
+map<unsigned int, Vehicle*> carMap; //manage all cars!
 
 
 int main() {
@@ -199,6 +379,7 @@ int main() {
     double max_s = 6945.554;
 
     ifstream in_map_(map_file_.c_str(), ifstream::in);
+
 
     string line;
     while (getline(in_map_, line)) {
@@ -243,6 +424,9 @@ int main() {
                     double car_x = j[1]["x"];
                     double car_y = j[1]["y"];
                     double car_s = j[1]["s"];
+
+                    double car_last_s=car_s;//init
+
                     double car_d = j[1]["d"];
                     double car_yaw = j[1]["yaw"];
                     double car_speed = j[1]["speed"];
@@ -254,7 +438,9 @@ int main() {
                     double end_path_s = j[1]["end_path_s"];
                     double end_path_d = j[1]["end_path_d"];
 
+
                     // Sensor Fusion Data, a list of all other cars on the same side of the road.
+                    //[id,x,y,vx,vy,s,d]
                     auto sensor_fusion = j[1]["sensor_fusion"];
 
                     int prev_size = previous_path_x.size();
@@ -262,14 +448,56 @@ int main() {
                     json msgJson;
 
 
-        printf("XXXXXXXXXXXXXXXstart--------------%f %f %d\n", end_path_s,end_path_d, prev_size);
+                    //generate trj
+                    //cal cost
+                    //find best
+                    //do it
 
-        for(int i=0;i<previous_path_x.size();i++)
-        {
-             cout << "previous_path_" << i << ": " << previous_path_x[i] << endl;
-        }
+                    //adjust carMap dataset from current sensor data.
+                    for(int i=0; i< sensor_fusion.size();i++)
+                    {
+                        unsigned int  id = sensor_fusion[i][0];
+                        double  x = sensor_fusion[i][1];
+                        double  y = sensor_fusion[i][2];
+                        double vx = sensor_fusion[i][3];
+                        double vy = sensor_fusion[i][4];
 
-        printf("XXXXXXXXXXXXXXXend--------------%f %f %d\n", end_path_s,end_path_d, prev_size);
+                        double  s = sensor_fusion[i][5];
+                        double  d = sensor_fusion[i][6];
+                        //double check_speed = sqrt(vx*vx+vy*vy);
+
+                        if( cnt == 0 ) //first sensor data!
+                        {
+                            delete carMap[id]; //XXX use it again...
+                            carMap[id] = new Vehicle(s,s,s,s,s,s); //0.0,0.0,d,0.0,0.0);
+                        }
+                        else
+                        {
+                            double prev_s = carMap[id]->state[0];
+                            double prev_s_ = carMap[id]->state[1];
+                            double prev_d = carMap[id]->state[4];
+                            double prev_d_ = carMap[id]->state[5];
+                            double s_  = abs(prev_s - s) /0.02;
+                            double s__ = abs(prev_s_ - s_ )/0.02;
+                            double d_  = abs(prev_d - d)/0.02;
+                            double d__ = abs(prev_d_ - d_)/0.02;
+                            carMap[id] = new Vehicle(s ,s_ ,s__ ,d ,d_ ,d__ );
+                        }
+
+
+                    }
+
+                    //vector<double> ttt = getXY(end_path_s,end_path_d ,map_waypoints_s, map_waypoints_x,map_waypoints_y);
+                    //std::cout << "XXXXXXXXXXXXXXXstart--------------end_path_xy:" << ttt[0] << ttt[1] <<
+                    //                                    "car_xy:" << car_x << car_y << std::endl;
+
+                    //for(int i=0;i<previous_path_x.size();i++)
+                    //{
+                    //     cout << "previous_path_" << i << ": " << previous_path_x[i] << endl;
+                    //}
+
+                    //std::cout << "XXXXXXXXXXXXXXXend--------------end_path_xy:" << ttt[0] << ttt[1] <<
+                    //                                        "car_xy:" << car_x << car_y << std::endl;
 
 
 
@@ -278,7 +506,7 @@ int main() {
 
                     if(prev_size > 0 )
                     {
-                        car_s = end_path_s;
+                        car_last_s = end_path_s; //the last waypoint of received end_path_s
                     }
 
                     bool too_close = false;
@@ -291,17 +519,17 @@ int main() {
                             double vx = sensor_fusion[i][3];
                             double vy = sensor_fusion[i][4];
                             double check_speed = sqrt(vx*vx+vy*vy);
-                            double check_car_s = sensor_fusion[i][5];
+                            double other_car_last_s = sensor_fusion[i][5];
 
-                            check_car_s +=((double)prev_size*0.02*check_speed) ;
+                            other_car_last_s +=((double)prev_size*0.02*check_speed) ;
 
 
 
-                            if((check_car_s > car_s) &&
-                               (check_car_s-car_s) < 30) 
+                            if((other_car_last_s > car_last_s) &&
+                               (other_car_last_s-car_last_s) < 30) 
                             {
                                     too_close=true;
-                                    lane = target_lane[(counter++)%4];
+                                    lane =  counter++ % 4; // target_lane[(counter++)%4];
                             }
                         }
                     }
@@ -355,11 +583,11 @@ int main() {
                     }
 
                     vector<double> next_wp0 = 
-                            getXY(car_s+30,(2+4*lane) ,map_waypoints_s, map_waypoints_x,map_waypoints_y);
+                            getXY(car_last_s+30,(2+4*lane) ,map_waypoints_s, map_waypoints_x,map_waypoints_y);
                     vector<double> next_wp1 = 
-                            getXY(car_s+60,(2+4*lane) ,map_waypoints_s, map_waypoints_x,map_waypoints_y);
+                            getXY(car_last_s+60,(2+4*lane) ,map_waypoints_s, map_waypoints_x,map_waypoints_y);
                     vector<double> next_wp2 = 
-                            getXY(car_s+90,(2+4*lane) ,map_waypoints_s, map_waypoints_x,map_waypoints_y);
+                            getXY(car_last_s+90,(2+4*lane) ,map_waypoints_s, map_waypoints_x,map_waypoints_y);
 
                     ptsx.push_back(next_wp0[0]);
                     ptsx.push_back(next_wp1[0]);
@@ -377,8 +605,48 @@ int main() {
                         ptsy[i] = (shift_x *sin(0-ref_yaw)+shift_y*cos(0-ref_yaw));
                     }
 
+                    vector<vector<double>> pts;
+
+                    //car_s   end_path_s   car_d   end_path_d
+
+                    vector<double>  start_s;
+                    vector<double>  start_d;
+
+                    double s_ = abs(end_path_s - car_s)/0.02;
+                    double s__;
+                    double d_ = abs(end_path_d - car_d ) /0.02; 
+                    double d__;
+                    if( cnt == 0 )
+                    {
+                        s__ = 0; //assume
+                        d__ = 0; //assume
+                    }
+                    else
+                    {
+                        s__ = abs(g_prev_s_ - s_ )/0.02;
+                        d__ = abs(g_prev_d_ - d_ )/0.02;
+                    }
+                    g_prev_s_ = s_;
+
+                    start_s.push_back(car_s);
+                    start_s.push_back(s_);
+                    start_s.push_back(s__);
+                    start_d.push_back(car_d);
+                    start_d.push_back(d_);
+                    start_d.push_back(d__);
+
+                    vector<double> delta ; 
+                    delta.push_back(0);
+                    delta.push_back(0);
+                    delta.push_back(0);
+                    delta.push_back(0);
+                    delta.push_back(0);
+                    delta.push_back(0);
+                    //XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+                    pts = PTG( start_s, start_d, 0 , delta, 2,   carMap); //T is assumed as 2.....
+
                     tk::spline s;
-                    s.set_points(ptsx,ptsy);
+                    s.set_points(pts[0],pts[1]);   //ptsx , ptsy
 
                     vector<double> next_x_vals;
                     vector<double> next_y_vals;
@@ -413,7 +681,7 @@ int main() {
                         y_point += ref_y;
                         next_x_vals.push_back(x_point);
                         next_y_vals.push_back(y_point);
-                        std::cout << "added... " << x_point  << "   "  << y_point  << std::endl;
+                        std::cout << "next:added... " << x_point  << "   "  << y_point  << std::endl;
                     }
 #endif
                     std::cout << "cnt-----------------------:" <<  cnt   << std::endl;
