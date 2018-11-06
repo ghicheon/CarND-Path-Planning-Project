@@ -8,9 +8,20 @@
 #include <map>
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
+#include "Eigen-3.3/Eigen/Dense"
 #include "json.hpp"
 
 #include "./spline.h"
+
+#include <cmath>
+
+
+//#include "Eigen-3.3/Eigen/Core"
+//#include "Eigen-3.3/Eigen/QR"
+
+using namespace std;
+using Eigen::MatrixXd;
+using Eigen::VectorXd;
 
 int cnt=0;
 
@@ -37,7 +48,7 @@ double VEHICLE_RADIUS = 1.5; // model vehicle as circle to simplify collision de
 int target_lane[4]={0,1,2,1};
 int counter = 0;
 
-int lane=1;
+int lane=0;
 float speed=0; //current speed(reference velocity).
 float speed_multiplier=1;
 
@@ -236,19 +247,6 @@ class Vehicle {
 
 };
 
-#include <iostream>
-#include <fstream>
-#include <cmath>
-#include <vector>
-
-#include "Eigen-3.3/Eigen/Dense"
-
-//#include "Eigen-3.3/Eigen/Core"
-//#include "Eigen-3.3/Eigen/QR"
-
-using namespace std;
-using Eigen::MatrixXd;
-using Eigen::VectorXd;
 
 vector<double> JMT(vector< double> start, vector <double> end, double T)
 {
@@ -305,25 +303,28 @@ vector<vector<double>>
 PTG( vector<double> start_s, vector<double> start_d, int target_vehicle,vector<double> delta,
           int T,  map<unsigned int, Vehicle*>  predictions )
 {
-        vector<vector<double>>  tr ;
+    vector<vector<double>>  tr ;
 
-        //for(;;)
-        vector<double> s_goal;
-        s_goal.push_back(start_s[0]+200); //XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-        s_goal.push_back(start_s[1]);
-        s_goal.push_back(start_s[2]);
+    //for(;;)
+    vector<double> s_goal;
+    s_goal.push_back(start_s[0]+200); //XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+    s_goal.push_back(start_s[1]);
+    s_goal.push_back(start_s[2]);
 
-        vector<double> d_goal;
-        d_goal.push_back( target_lane[(int)start_d[0]] );
-        d_goal.push_back(start_d[1]);
-        d_goal.push_back(start_d[2]);
+    vector<double> d_goal;
+    d_goal.push_back( target_lane[(int)start_d[0]] );
+    d_goal.push_back(start_d[1]);
+    d_goal.push_back(start_d[2]);
 
-        vector<double>  s_coefficients = JMT(start_s, s_goal, T);
-        vector<double>  d_coefficients = JMT(start_d, d_goal, T);
+    vector<double>  sc = JMT(start_s, s_goal, T); //s coefficients 
+    vector<double>  dc = JMT(start_d, d_goal, T); //d coefficients 
 
-        tr.push_back(s_coefficients);
-        tr.push_back(d_coefficients);
-        return tr;
+
+
+    tr.push_back(sc);
+    tr.push_back(dc);
+
+    return tr;
 
 #if 0
     vector<Vehicle> target = predictions[target_vehicle];
@@ -361,6 +362,15 @@ PTG( vector<double> start_s, vector<double> start_d, int target_vehicle,vector<d
 }
 
 map<unsigned int, Vehicle*> carMap; //manage all cars!
+
+
+
+//6 coefficient & time
+int getResult(vector<double> xx , unsigned int t)
+{
+
+    return xx[0] + xx[1]*t + xx[2]*t*t  + xx[3]*t*t*t + xx[4]*t*t*t*t + xx[5]*t*t*t*t*t ;
+}
 
 
 int main() {
@@ -423,11 +433,14 @@ int main() {
                     // Main car's localization Data
                     double car_x = j[1]["x"];
                     double car_y = j[1]["y"];
-                    double car_s = j[1]["s"];
 
+                    double car_s = j[1]["s"];
                     double car_last_s=car_s;//init
 
                     double car_d = j[1]["d"];
+                    double car_last_d=car_d;
+
+
                     double car_yaw = j[1]["yaw"];
                     double car_speed = j[1]["speed"];
 
@@ -500,7 +513,11 @@ int main() {
                     //                                        "car_xy:" << car_x << car_y << std::endl;
 
 
+                    double ref_x = car_x;
+                    double ref_y = car_y;
+                    double ref_yaw = deg2rad(car_yaw);
 
+#if 0     //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
                     //TODO:define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
 
@@ -547,13 +564,9 @@ int main() {
                     }
 
 //////////////////////////////////////////////////////////////////////////////////////////////
-#if 1
                     vector<double> ptsx;
                     vector<double> ptsy;
 
-                    double ref_x = car_x;
-                    double ref_y = car_y;
-                    double ref_yaw = deg2rad(car_yaw);
                     if(prev_size < 2)
                     {
                         double prev_car_x = car_x - cos(car_yaw);
@@ -605,6 +618,41 @@ int main() {
                         ptsy[i] = (shift_x *sin(0-ref_yaw)+shift_y*cos(0-ref_yaw));
                     }
 
+                    s.set_points(ptsx,ptsy);   //ptsx , ptsy
+#endif
+                    ///////////////////////////////////////////////////////////////////////////
+
+                    vector<double> ptsx;
+                    vector<double> ptsy;
+
+                    if(prev_size < 2)
+                    {
+                        double prev_car_x = car_x - cos(car_yaw);
+                        double prev_car_y = car_y - sin(car_yaw);
+                        ptsx.push_back(prev_car_x);
+                        ptsx.push_back(car_x);
+
+                        ptsy.push_back(prev_car_y);
+                        ptsy.push_back(car_y);
+                    }
+                    else
+                    {
+                        ref_x = previous_path_x[prev_size-1];
+                        ref_y = previous_path_y[prev_size-1];
+
+                        double ref_x_prev = previous_path_x[prev_size-2];
+                        double ref_y_prev = previous_path_y[prev_size-2];
+
+                        ref_yaw = atan2( ref_y-ref_y_prev,
+                                         ref_x-ref_x_prev);
+
+                        ptsx.push_back(ref_x_prev);
+                        ptsx.push_back(ref_x);
+
+                        ptsy.push_back(ref_y_prev);
+                        ptsy.push_back(ref_y);
+                    }
+
                     vector<vector<double>> pts;
 
                     //car_s   end_path_s   car_d   end_path_d
@@ -645,9 +693,40 @@ int main() {
                     //XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
                     pts = PTG( start_s, start_d, 0 , delta, 2,   carMap); //T is assumed as 2.....
 
-                    tk::spline s;
-                    s.set_points(pts[0],pts[1]);   //ptsx , ptsy
+                    vector<double> S = pts[0]; // 6 coeffient about s
+                    vector<double> D = pts[1]; // 6 coeffient about d
 
+
+                    vector<double> next_wp0 = getXY(car_last_s + getResult(S,0.5), 
+                            car_last_d + getResult(D,0.5),map_waypoints_s, map_waypoints_x,map_waypoints_y);
+                    vector<double> next_wp1 = getXY(car_last_s + getResult(S,1), 
+                            car_last_d + getResult(D,1),map_waypoints_s, map_waypoints_x,map_waypoints_y);
+                    vector<double> next_wp2 = getXY(car_last_s + getResult(S,1.5), 
+                            car_last_d + getResult(D,1.5),map_waypoints_s, map_waypoints_x,map_waypoints_y);
+
+
+                    ptsx.push_back(next_wp0[0]);
+                    ptsx.push_back(next_wp1[0]);
+                    ptsx.push_back(next_wp2[0]);
+
+                    ptsy.push_back(next_wp0[1]);
+                    ptsy.push_back(next_wp1[1]);
+                    ptsy.push_back(next_wp2[1]);
+
+                    for(int i=0; i < ptsx.size(); i++)
+                    {
+                        double shift_x = ptsx[i] - ref_x;
+                        double shift_y = ptsy[i] - ref_y;
+                        ptsx[i] = (shift_x *cos(0-ref_yaw)-shift_y*sin(0-ref_yaw));
+                        ptsy[i] = (shift_x *sin(0-ref_yaw)+shift_y*cos(0-ref_yaw));
+                    }
+
+
+                    tk::spline s;
+
+                    s.set_points(ptsx,ptsy); 
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
                     vector<double> next_x_vals;
                     vector<double> next_y_vals;
 
@@ -683,7 +762,6 @@ int main() {
                         next_y_vals.push_back(y_point);
                         std::cout << "next:added... " << x_point  << "   "  << y_point  << std::endl;
                     }
-#endif
                     std::cout << "cnt-----------------------:" <<  cnt   << std::endl;
                     cnt++;
 //////////////////////////////////////////////////////////////////////////////////////////////
