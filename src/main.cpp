@@ -428,12 +428,16 @@ int main() {
                     if(too_close)
                     {
                         speed -= 0.224 * speed_multiplier;
-                        speed_multiplier -=1;
+                        if(speed_multiplier != 1 )
+                            speed_multiplier -=1;
                         
                     }
                     else if((speed +0.224 * speed_multiplier) < MAX_SPEED)
                     {
                         speed += 0.224 * speed_multiplier;
+
+                        if(speed_multiplier < 5 )
+                            speed_multiplier +=1;
                         
                     }
 
