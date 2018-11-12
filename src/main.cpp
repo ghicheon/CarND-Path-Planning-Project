@@ -30,7 +30,7 @@ using Eigen::VectorXd;
 
 int cnt=0;
 
-#define MAX_SPEED 49
+#define MAX_SPEED 50
 
 int target_lane[]={0,1,2,1};
 int counter = 0;
@@ -400,46 +400,76 @@ int main() {
                         car_s = end_path_s;
                     }
 
-                    bool too_close = false;
+                    unsigned int too_close = 0;
 
-                    for(int i=0; i< sensor_fusion.size();i++)
+                    if( too_close  == 0 )
                     {
-                        float d = sensor_fusion[i][6];
-                        if( (d < (2+4*lane+2)) && (d > (2+4*lane-2)) )
-                        {
-                            double vx = sensor_fusion[i][3];
-                            double vy = sensor_fusion[i][4];
-                            double check_speed = sqrt(vx*vx+vy*vy);
-                            double check_car_s = sensor_fusion[i][5];
-
-                            check_car_s +=((double)prev_size*0.02*check_speed) ;
-
-
-
-                            if((check_car_s > car_s) &&
-                               (check_car_s-car_s) < 30) 
+                            for(int i=0; i< sensor_fusion.size();i++)
                             {
-                                    too_close=true;
-                                    lane = target_lane[(counter++)%4];
+                                float d = sensor_fusion[i][6];
+                                if( (d < (2+4*lane+2)) && (d > (2+4*lane-2)) )
+                                {
+                                    double vx = sensor_fusion[i][3];
+                                    double vy = sensor_fusion[i][4];
+                                    double check_speed = sqrt(vx*vx+vy*vy);
+                                    double check_car_s = sensor_fusion[i][5];
+
+                                    check_car_s +=((double)prev_size*0.02*check_speed) ;
+
+                                    if((check_car_s > car_s) &&
+                                       (check_car_s-car_s) < 30) 
+                                    {
+                                            too_close = 10; //consider chainging line for following 10 times.
+                                            break;
+                                    }
+                                }
                             }
-                        }
                     }
 
                     if(too_close)
                     {
-                        speed -= 0.224 * speed_multiplier;
+                        unsigned int new_lane = target_lane[(counter)%4];
+                        unsigned int feasible=1;
+
+                        //first, check other cars!!
+                        for(int i=0; i< sensor_fusion.size();i++)
+                        {
+                            float s = sensor_fusion[i][5];
+                            float d = sensor_fusion[i][6];
+                            if( (d < (2+4*new_lane+2)) && (d > (2+4*new_lane-2)) )
+                            {
+                                if( (s < (car_s+30)) && (s > (car_s-35)) ) //+/- 20
+                                {
+                                        feasible=0;
+                                        break;
+                                }
+                            }
+                        }
+
+                        speed -= 0.224 * speed_multiplier;   //slowing down little bit.
                         if(speed_multiplier != 1 )
                             speed_multiplier -=1;
+
+                        if( feasible )
+                        {
+                            lane = new_lane;
+                            counter++;
+                            too_close = 0; //new start
+                            cout << "change line success!!!" << endl;
+                        }
+
                         
                     }
                     else if((speed +0.224 * speed_multiplier) < MAX_SPEED)
                     {
                         speed += 0.224 * speed_multiplier;
 
-                        if(speed_multiplier < 5 )
+                        if(speed_multiplier < 3 )
                             speed_multiplier +=1;
                         
                     }
+
+                    too_close--;
 
 
                     vector<double> next_wp0 = 
@@ -475,8 +505,6 @@ int main() {
                     {
                         next_x_vals.push_back(previous_path_x[i]);
                         next_y_vals.push_back(previous_path_y[i]);
-
-                        std::cout << "    prev: added... " << previous_path_x[i] << "  " << previous_path_y[i];
                     }
 
                     double target_x=30.0;
@@ -501,10 +529,9 @@ int main() {
                         y_point += ref_y;
                         next_x_vals.push_back(x_point);
                         next_y_vals.push_back(y_point);
-                        std::cout << "added... " << x_point  << "   "  << y_point  << std::endl;
                     }
 
-                    std::cout << "cnt-----------------------:" <<  cnt   << std::endl;
+                    //std::cout << "cnt-----------------------:" <<  cnt   << std::endl;
                     cnt++;
 //////////////////////////////////////////////////////////////////////////////////////////////
 
