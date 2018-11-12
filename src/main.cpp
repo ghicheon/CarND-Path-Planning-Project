@@ -30,14 +30,14 @@ using Eigen::VectorXd;
 
 int cnt=0;
 
-#define MAX_SPEED 200
+#define MAX_SPEED 49
 
 int target_lane[]={0,1,2,1};
 int counter = 0;
 
 int lane=1;
 float speed=0; //current speed(reference velocity).
-float speed_multiplier=1;
+float speed_multiplier=1; //not used now.
 
 using namespace std;
 
@@ -236,86 +236,7 @@ class Vehicle {
 };
 
 
-vector<double> JMT(vector< double> start, vector <double> end, double T)
-{
-    /*
-    Calculate the Jerk Minimizing Trajectory that connects the initial state
-    to the final state in time T.
-
-    INPUTS
-
-    start - the vehicles start location given as a length three array
-        corresponding to initial values of [s, s_dot, s_double_dot]
-
-    end   - the desired end state for vehicle. Like "start" this is a
-        length three array.
-
-    T     - The duration, in seconds, over which this maneuver should occur.
-
-    OUTPUT 
-    an array of length 6, each value corresponding to a coefficent in the polynomial 
-    s(t) = a_0 + a_1 * t + a_2 * t**2 + a_3 * t**3 + a_4 * t**4 + a_5 * t**5
-
-    EXAMPLE
-
-    > JMT( [0, 10, 0], [10, 10, 0], 1)
-    [0.0, 10.0, 0.0, 0.0, 0.0, 0.0]
-    */
-    
-    MatrixXd A = MatrixXd(3, 3);
-    A << T*T*T, T*T*T*T, T*T*T*T*T,
-                3*T*T, 4*T*T*T,5*T*T*T*T,
-                6*T, 12*T*T, 20*T*T*T;
-        
-    MatrixXd B = MatrixXd(3,1);     
-    B << end[0]-(start[0]+start[1]*T+.5*start[2]*T*T),
-                end[1]-(start[1]+start[2]*T),
-                end[2]-start[2];
-                
-    MatrixXd Ai = A.inverse();
-    
-    MatrixXd C = Ai*B;
-    
-    vector <double> result = {start[0], start[1], .5*start[2]};
-    for(int i = 0; i < C.size(); i++)
-    {
-        result.push_back(C.data()[i]);
-    }
-    
-    return result;
-    
-}
-
-
-vector<vector<double>> 
-PTG( vector<double> start_s, vector<double> start_d, int target_vehicle,vector<double> delta,
-          int T,  map<unsigned int, Vehicle*>  predictions )
-{
-    vector<vector<double>>  tr ;
-
-    //for(;;)
-    vector<double> s_goal;
-    s_goal.push_back(start_s[0]+200); //XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-    s_goal.push_back(start_s[1]);
-    s_goal.push_back(start_s[2]);
-
-    vector<double> d_goal;
-    d_goal.push_back( target_lane[(int)start_d[0]] );
-    d_goal.push_back(start_d[1]);
-    d_goal.push_back(start_d[2]);
-
-    vector<double>  sc = JMT(start_s, s_goal, T); //s coefficients 
-    vector<double>  dc = JMT(start_d, d_goal, T); //d coefficients 
-
-    tr.push_back(sc);
-    tr.push_back(dc);
-
-    return tr;
-}
-
 map<unsigned int, Vehicle*> carMap; //manage all cars!
-
-
 
 //6 coefficient & time
 int getResult(vector<double> xx , unsigned int t)
@@ -404,6 +325,40 @@ int main() {
 
                     json msgJson;
 
+                    vector<double> ptsx;
+                    vector<double> ptsy;
+
+                    double ref_x = car_x;
+                    double ref_y = car_y;
+                    double ref_yaw = deg2rad(car_yaw);
+                    if(prev_size < 2)
+                    {
+                        double prev_car_x = car_x - cos(car_yaw);
+                        double prev_car_y = car_y - sin(car_yaw);
+                        ptsx.push_back(prev_car_x);
+                        ptsx.push_back(car_x);
+
+                        ptsy.push_back(prev_car_y);
+                        ptsy.push_back(car_y);
+                    }
+                    else
+                    {
+                        ref_x = previous_path_x[prev_size-1];
+                        ref_y = previous_path_y[prev_size-1];
+
+                        double ref_x_prev = previous_path_x[prev_size-2];
+                        double ref_y_prev = previous_path_y[prev_size-2];
+
+                        ref_yaw = atan2( ref_y-ref_y_prev,
+                                         ref_x-ref_x_prev);
+
+                        ptsx.push_back(ref_x_prev);
+                        ptsx.push_back(ref_x);
+
+                        ptsy.push_back(ref_y_prev);
+                        ptsy.push_back(ref_y);
+                    }
+
                     for(int i=0; i< sensor_fusion.size();i++)
                     {
                         unsigned int  id = sensor_fusion[i][0];
@@ -473,118 +428,22 @@ int main() {
                     if(too_close)
                     {
                         speed -= 0.224 * speed_multiplier;
-                        speed_multiplier -=2;
+                        speed_multiplier -=1;
                         
                     }
-                    else if(speed < MAX_SPEED)
+                    else if((speed +0.224 * speed_multiplier) < MAX_SPEED)
                     {
                         speed += 0.224 * speed_multiplier;
-                        speed_multiplier +=2;
+                        
                     }
 
-//////////////////////////////////////////////////////////////////////////////////////////////
-#if 1
-                    vector<double> ptsx;
-                    vector<double> ptsy;
-
-                    double ref_x = car_x;
-                    double ref_y = car_y;
-                    double ref_yaw = deg2rad(car_yaw);
-                    if(prev_size < 2)
-                    {
-                        double prev_car_x = car_x - cos(car_yaw);
-                        double prev_car_y = car_y - sin(car_yaw);
-                        ptsx.push_back(prev_car_x);
-                        ptsx.push_back(car_x);
-
-                        ptsy.push_back(prev_car_y);
-                        ptsy.push_back(car_y);
-                    }
-                    else
-                    {
-                        ref_x = previous_path_x[prev_size-1];
-                        ref_y = previous_path_y[prev_size-1];
-
-                        double ref_x_prev = previous_path_x[prev_size-2];
-                        double ref_y_prev = previous_path_y[prev_size-2];
-
-                        ref_yaw = atan2( ref_y-ref_y_prev,
-                                         ref_x-ref_x_prev);
-
-                        ptsx.push_back(ref_x_prev);
-                        ptsx.push_back(ref_x);
-
-                        ptsy.push_back(ref_y_prev);
-                        ptsy.push_back(ref_y);
-                    }
-//////////////////////////////////////////////////////////////////////////////
-                    vector<double>  start_s;
-                    vector<double>  start_d;
-
-                    double s_ = abs(end_path_s - car_s)/0.02;
-                    double s__;
-                    double d_ = abs(end_path_d - car_d ) /0.02; 
-                    double d__;
-                    if( cnt == 0 )
-                    {
-                        s__ = 0; //assume
-                        d__ = 0; //assume
-                    }
-                    else
-                    {
-                        s__ = abs(g_prev_s_ - s_ )/0.02;
-                        d__ = abs(g_prev_d_ - d_ )/0.02;
-                    }
-                    g_prev_s_ = s_;
-
-                    start_s.push_back(car_s);
-                    start_s.push_back(s_);
-                    start_s.push_back(s__);
-                    start_d.push_back(car_d);
-                    start_d.push_back(d_);
-                    start_d.push_back(d__);
-
-                    vector<double> delta ; 
-                    delta.push_back(0);
-                    delta.push_back(0);
-                    delta.push_back(0);
-                    delta.push_back(0);
-                    delta.push_back(0);
-                    delta.push_back(0);
-
-printf("start_s: %f %f %f\n",  
-start_s[0],
-start_s[1],
-start_s[2]);
-
-printf("start_d: %f %f %f\n",  
-start_d[0],
-start_d[1],
-start_d[2]);
-                    vector<vector<double>> pts;
-
-
-                    pts = PTG( start_s, start_d, 0 , delta, 3,   carMap); //T is assumed as 2.....
-
-                    cout << "[debug]-----------------------" << endl;
-                    for(int i=0; i < pts[0].size() ; i++)   cout <<"xx " << pts[0][i] << endl;
-                    cout << "------------------------------" << endl;
-/////////////////////////////////////////////////////////////////////////////////
-
-double s1 = 5;
-double s2 = 10;
-double s3 = 15;
-
-double d1 = getResult( pts[1] , 1);
-double d2 = getResult( pts[1] , 2);
-double d3 = getResult( pts[1] , 3);
 
                     vector<double> next_wp0 = 
-                            getXY(car_s+5,  d1 ,map_waypoints_s, map_waypoints_x,map_waypoints_y);
+                            getXY(car_s+30, 4*lane+2 ,map_waypoints_s, map_waypoints_x,map_waypoints_y);
                     vector<double> next_wp1 = 
-                            getXY(car_s+10, d2,map_waypoints_s, map_waypoints_x,map_waypoints_y);
+                            getXY(car_s+60, 4*lane+2 ,map_waypoints_s, map_waypoints_x,map_waypoints_y);
                     vector<double> next_wp2 = 
-                            getXY(car_s+15, d3 ,map_waypoints_s, map_waypoints_x,map_waypoints_y);
+                            getXY(car_s+90, 4*lane+2  ,map_waypoints_s, map_waypoints_x,map_waypoints_y);
 
                     ptsx.push_back(next_wp0[0]);
                     ptsx.push_back(next_wp1[0]);
@@ -640,7 +499,7 @@ double d3 = getResult( pts[1] , 3);
                         next_y_vals.push_back(y_point);
                         std::cout << "added... " << x_point  << "   "  << y_point  << std::endl;
                     }
-#endif
+
                     std::cout << "cnt-----------------------:" <<  cnt   << std::endl;
                     cnt++;
 //////////////////////////////////////////////////////////////////////////////////////////////
