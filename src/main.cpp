@@ -16,6 +16,16 @@
 
 #include <cmath>
 
+
+enum state { KEEP , 
+             FIND,  //find good lane from their speed.  cost calculation!
+             PRE_RIGHT,
+             PRE_LEFT, 
+             LEFT, 
+             RIGHT };
+
+int current = KEEP;
+
 double    g_prev_s_;
 double    g_prev_d_;
 
@@ -97,6 +107,34 @@ int ClosestWaypoint(double x, double y, const vector<double> &maps_x, const vect
 
 }
 
+
+
+//consider ONLY around s and ONLY at d !!
+//return true or false
+//it's based on ClosestWaypoint().
+int IsSafe(double x, double y,  const vector<double> &maps_x, const vector<double> &maps_y,
+           double s, double d)
+{
+
+    double closestLen = 100000; //large number
+    int closestWaypoint = 0;
+
+    for(int i = 0; i < maps_x.size(); i++)
+    {
+        double map_x = maps_x[i];
+        double map_y = maps_y[i];
+        double dist = distance(x,y,map_x,map_y);
+        if(dist < closestLen)
+        {
+            closestLen = dist;
+            closestWaypoint = i;
+        }
+
+    }
+
+    return closestWaypoint;
+
+}
 int NextWaypoint(double x, double y, double theta, const vector<double> &maps_x, const vector<double> &maps_y)
 {
 
@@ -402,7 +440,8 @@ int main() {
 
                     unsigned int too_close = 0;
 
-                    if( too_close  == 0 )
+                
+                    if( current == KEEP )     //too_close  == 0 )
                     {
                             for(int i=0; i< sensor_fusion.size();i++)
                             {
@@ -419,30 +458,112 @@ int main() {
                                     if((check_car_s > car_s) &&
                                        (check_car_s-car_s) < 30) 
                                     {
-                                            too_close = 10; //consider chainging line for following 10 times.
+                                            //consider chainging line for following 10 times.
+                                            //too_close = 10; 
+                                            current = FIND; 
                                             break;
+
                                     }
                                 }
                             }
                     }
 
-                    if(too_close)
+                    if(current == FIND )      //too_close)
                     {
                         unsigned int new_lane = target_lane[(counter)%4];
-                        unsigned int feasible=1;
+                    
 
                         //first, check other cars!!
+
+                        //first, find close left car and right one.
+                        int left_ok = 1;
+                        int right_ok= 1;
+                        double dist;
+                        double closest_right=-1;
+                        double closest_right_dist=999999;
+                        double closest_left=-1;
+                        double closest_left_dist=999999;
                         for(int i=0; i< sensor_fusion.size();i++)
                         {
-                            float s = sensor_fusion[i][5];
-                            float d = sensor_fusion[i][6];
-                            if( (d < (2+4*new_lane+2)) && (d > (2+4*new_lane-2)) )
+                            double  x = sensor_fusion[i][1];
+                            double  y = sensor_fusion[i][2];
+                            double  s = sensor_fusion[i][5];
+                            double  d = sensor_fusion[i][6];
+                            double vx = sensor_fusion[i][3];
+                            double vy = sensor_fusion[i][4];
+
+
+                            if( (lane == 0) || (lane == 1) )  //right
                             {
-                                if( (s < (car_s+30)) && (s > (car_s-35)) ) //+/- 20
-                                {
-                                        feasible=0;
-                                        break;
-                                }
+                                    if( (d < (2+4*(lane+1)+2)) && (d > (2+4*(lane+1)-2)) )
+                                    {
+                                        if( (s < (car_s+30)) && (s > (car_s-35)) ) // +/- something!
+                                        {
+                                                right_ok = 0;
+                                                break;
+                                        }
+                                        else
+                                        {
+                                                dist = distance(car_x,car_y, x,y);
+                                                if( closest_right_dist   > dist )
+                                                {
+                                                    closest_right = i;
+                                                    closest_right_dist = dist;
+                                                }
+                                        }
+                                    }
+
+                            }
+
+                            if( (lane == 2) || (lane == 1) ) // left
+                            {
+                                    if( (d < (2+4*(lane-1)+2)) && (d > (2+4*(lane-1)-2)) )
+                                    {
+                                        if( (s < (car_s+30)) && (s > (car_s-35)) ) // +/- something!
+                                        {
+                                                left_ok = 0;
+                                                break;
+                                        }
+                                        else
+                                        {
+                                                dist = distance(car_x,car_y, x,y);
+                                                if( closest_left_dist   > dist )
+                                                {
+                                                    closest_left = i;
+                                                    closest_left_dist = dist;
+                                                }
+                                        }
+                                    }
+
+                            }
+                        }
+
+                        //second, change lane if it's possible. 
+                        //        when there are 2 options, select the best one after calculating costs!
+
+                        if( left_ok == 1 && right_ok == 0 )   lane -=1;
+                        else if( left_ok == 0 && right_ok == 1 )   lane +=1;
+                        else
+                        {
+                            //select the best one! currently, speed is cost.
+                            double vx ;
+                            double vy ;
+
+                            vx = sensor_fusion[closest_left][3];
+                            vy = sensor_fusion[closest_left][4];
+                            double left_speed = sqrt(vx*vx+vy*vy);
+
+                            vx = sensor_fusion[closest_right][3];
+                            vy = sensor_fusion[closest_right][4];
+                            double right_speed = sqrt(vx*vx+vy*vy);
+
+                            if( left_speed > right_speed ) 
+                            {
+                                current = LEFT;
+                            }
+                            else
+                            {
+                                current = RIGHT;
                             }
                         }
 
@@ -450,12 +571,21 @@ int main() {
                         if(speed_multiplier != 1 )
                             speed_multiplier -=1;
 
-                        if( feasible )
+                        if( current == LEFT )
                         {
-                            lane = new_lane;
+                            lane -= lane;
                             counter++;
                             too_close = 0; //new start
                             cout << "change line success!!!" << endl;
+                            current = KEEP;
+                        }
+                        else if( current == RIGHT )
+                        {
+                            lane -= lane;
+                            counter++;
+                            too_close = 0; //new start
+                            cout << "change line success!!!" << endl;
+                            current = KEEP;
                         }
 
                         
