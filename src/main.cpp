@@ -16,6 +16,8 @@
 
 #include <cmath>
 
+//#define HERE_DEBUG() printf("%s   %d\n", __func__ , __LINE__ );
+#define HERE_DEBUG() 
 
 enum state { KEEP , 
              FIND,  //find good lane from their speed.  cost calculation!
@@ -40,6 +42,7 @@ using Eigen::VectorXd;
 
 int cnt=0;
 
+//#define MAX_SPEED 200
 #define MAX_SPEED 50
 
 int target_lane[]={0,1,2,1};
@@ -369,8 +372,10 @@ int main() {
                     double ref_x = car_x;
                     double ref_y = car_y;
                     double ref_yaw = deg2rad(car_yaw);
+HERE_DEBUG();
                     if(prev_size < 2)
                     {
+HERE_DEBUG();
                         double prev_car_x = car_x - cos(car_yaw);
                         double prev_car_y = car_y - sin(car_yaw);
                         ptsx.push_back(prev_car_x);
@@ -381,6 +386,7 @@ int main() {
                     }
                     else
                     {
+HERE_DEBUG();
                         ref_x = previous_path_x[prev_size-1];
                         ref_y = previous_path_y[prev_size-1];
 
@@ -396,6 +402,7 @@ int main() {
                         ptsy.push_back(ref_y_prev);
                         ptsy.push_back(ref_y);
                     }
+HERE_DEBUG();
 
                     for(int i=0; i< sensor_fusion.size();i++)
                     {
@@ -428,8 +435,10 @@ int main() {
                         }
 
 
+HERE_DEBUG();
                     }
 
+HERE_DEBUG();
 
                     //TODO:define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
 
@@ -440,6 +449,7 @@ int main() {
 
                     unsigned int too_close = 0;
 
+HERE_DEBUG();
                 
                     if( current == KEEP )     //too_close  == 0 )
                     {
@@ -467,14 +477,10 @@ int main() {
                                 }
                             }
                     }
+HERE_DEBUG();
 
                     if(current == FIND )      //too_close)
                     {
-                        unsigned int new_lane = target_lane[(counter)%4];
-                    
-
-                        //first, check other cars!!
-
                         //first, find close left car and right one.
                         int left_ok = 1;
                         int right_ok= 1;
@@ -487,10 +493,10 @@ int main() {
                         {
                             double  x = sensor_fusion[i][1];
                             double  y = sensor_fusion[i][2];
-                            double  s = sensor_fusion[i][5];
-                            double  d = sensor_fusion[i][6];
                             double vx = sensor_fusion[i][3];
                             double vy = sensor_fusion[i][4];
+                            double  s = sensor_fusion[i][5];
+                            double  d = sensor_fusion[i][6];
 
 
                             if( (lane == 0) || (lane == 1) )  //right
@@ -500,7 +506,6 @@ int main() {
                                         if( (s < (car_s+30)) && (s > (car_s-35)) ) // +/- something!
                                         {
                                                 right_ok = 0;
-                                                break;
                                         }
                                         else
                                         {
@@ -522,7 +527,6 @@ int main() {
                                         if( (s < (car_s+30)) && (s > (car_s-35)) ) // +/- something!
                                         {
                                                 left_ok = 0;
-                                                break;
                                         }
                                         else
                                         {
@@ -537,58 +541,76 @@ int main() {
 
                             }
                         }
+HERE_DEBUG();
 
                         //second, change lane if it's possible. 
                         //        when there are 2 options, select the best one after calculating costs!
 
-                        if( left_ok == 1 && right_ok == 0 )   lane -=1;
-                        else if( left_ok == 0 && right_ok == 1 )   lane +=1;
+HERE_DEBUG();
+                        if( left_ok == 1 && right_ok == 0 )
+                        {
+                            //XXX check speed.
+HERE_DEBUG();
+                            lane -=1;
+                            assert( lane >= 0 && lane <= 2 );
+                        }
+                        else if( left_ok == 0 && right_ok == 1 ) 
+                        {
+HERE_DEBUG();
+                            //XXX check speed.
+                            lane +=1;
+                            assert( lane >= 0 && lane <= 2 );
+                        }
                         else
                         {
+HERE_DEBUG();
                             //select the best one! currently, speed is cost.
                             double vx ;
                             double vy ;
+                            double left_speed=0;
+                            double right_speed=0;
 
-                            vx = sensor_fusion[closest_left][3];
-                            vy = sensor_fusion[closest_left][4];
-                            double left_speed = sqrt(vx*vx+vy*vy);
+                            if(closest_left != -1  )
+                            {
+                                    vx = sensor_fusion[closest_left][3];
+                                    vy = sensor_fusion[closest_left][4];
+                                    left_speed = sqrt(vx*vx+vy*vy);
+                            }
 
-                            vx = sensor_fusion[closest_right][3];
-                            vy = sensor_fusion[closest_right][4];
-                            double right_speed = sqrt(vx*vx+vy*vy);
+                            if(closest_right != -1  )
+                            {
+                                    vx = sensor_fusion[closest_right][3];
+                                    vy = sensor_fusion[closest_right][4];
+                                    right_speed = sqrt(vx*vx+vy*vy);
+                            }
+HERE_DEBUG();
 
                             if( left_speed > right_speed ) 
                             {
+HERE_DEBUG();
                                 current = LEFT;
+                                cout << "change line success!!! old:" << lane << "  new:" << lane-1 << endl;
+                                lane -=1;
+HERE_DEBUG();
                             }
                             else
                             {
+HERE_DEBUG();
                                 current = RIGHT;
+                                cout << "change line success!!! old:" << lane << "  new:" << lane+1 << endl;
+                                lane +=1;
+HERE_DEBUG();
                             }
+                            current = KEEP;
+HERE_DEBUG();
                         }
 
+HERE_DEBUG();
                         speed -= 0.224 * speed_multiplier;   //slowing down little bit.
                         if(speed_multiplier != 1 )
                             speed_multiplier -=1;
+HERE_DEBUG();
 
-                        if( current == LEFT )
-                        {
-                            lane -= lane;
-                            counter++;
-                            too_close = 0; //new start
-                            cout << "change line success!!!" << endl;
-                            current = KEEP;
-                        }
-                        else if( current == RIGHT )
-                        {
-                            lane -= lane;
-                            counter++;
-                            too_close = 0; //new start
-                            cout << "change line success!!!" << endl;
-                            current = KEEP;
-                        }
-
-                        
                     }
                     else if((speed +0.224 * speed_multiplier) < MAX_SPEED)
                     {
@@ -596,10 +618,17 @@ int main() {
 
                         if(speed_multiplier < 3 )
                             speed_multiplier +=1;
+HERE_DEBUG();
                         
                     }
 
+HERE_DEBUG();
+                    counter++;
+
                     too_close--;
+
+
+HERE_DEBUG();
 
 
                     vector<double> next_wp0 = 
@@ -608,6 +637,7 @@ int main() {
                             getXY(car_s+60, 4*lane+2 ,map_waypoints_s, map_waypoints_x,map_waypoints_y);
                     vector<double> next_wp2 = 
                             getXY(car_s+90, 4*lane+2  ,map_waypoints_s, map_waypoints_x,map_waypoints_y);
+HERE_DEBUG();
 
                     ptsx.push_back(next_wp0[0]);
                     ptsx.push_back(next_wp1[0]);
@@ -624,9 +654,12 @@ int main() {
                         ptsx[i] = (shift_x *cos(0-ref_yaw)-shift_y*sin(0-ref_yaw));
                         ptsy[i] = (shift_x *sin(0-ref_yaw)+shift_y*cos(0-ref_yaw));
                     }
+HERE_DEBUG();
 
                     tk::spline s;
+HERE_DEBUG();
                     s.set_points(ptsx,ptsy);
+HERE_DEBUG();
 
                     vector<double> next_x_vals;
                     vector<double> next_y_vals;
@@ -640,6 +673,7 @@ int main() {
                     double target_x=30.0;
                     double target_y = s(target_x);
                     double target_dist = sqrt(target_x*target_x + target_y*target_y);
+HERE_DEBUG();
 
 
                     double x_add_on=0;
@@ -661,6 +695,7 @@ int main() {
                         next_y_vals.push_back(y_point);
                     }
 
+HERE_DEBUG();
                     //std::cout << "cnt-----------------------:" <<  cnt   << std::endl;
                     cnt++;
 //////////////////////////////////////////////////////////////////////////////////////////////
