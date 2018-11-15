@@ -45,7 +45,6 @@ int cnt=0;
 //#define MAX_SPEED 200
 #define MAX_SPEED 50
 
-int target_lane[]={0,1,2,1};
 int counter = 0;
 
 int lane=1;
@@ -482,8 +481,8 @@ HERE_DEBUG();
                     if(current == FIND )      //too_close)
                     {
                         //first, find close left car and right one.
-                        int left_ok = 1;
-                        int right_ok= 1;
+                        int left_ok = (lane != 0) ? 1 : 0;
+                        int right_ok= (lane != 2) ? 1 : 0;
                         double dist;
                         double closest_right=-1;
                         double closest_right_dist=999999;
@@ -499,7 +498,7 @@ HERE_DEBUG();
                             double  d = sensor_fusion[i][6];
 
 
-                            if( (lane == 0) || (lane == 1) )  //right
+                            if( (lane == 0) || (lane == 1) )  //check right
                             {
                                     if( (d < (2+4*(lane+1)+2)) && (d > (2+4*(lane+1)-2)) )
                                     {
@@ -509,6 +508,7 @@ HERE_DEBUG();
                                         }
                                         else
                                         {
+                                                //try to find the closest right car from ego car.
                                                 dist = distance(car_x,car_y, x,y);
                                                 if( closest_right_dist   > dist )
                                                 {
@@ -547,21 +547,21 @@ HERE_DEBUG();
                         //        when there are 2 options, select the best one after calculating costs!
 
 HERE_DEBUG();
-                        if( left_ok == 1 && right_ok == 0 )
+                        if( (left_ok == 1) && (right_ok == 0) )
                         {
                             //XXX check speed.
 HERE_DEBUG();
                             lane -=1;
                             assert( lane >= 0 && lane <= 2 );
                         }
-                        else if( left_ok == 0 && right_ok == 1 ) 
+                        else if( (left_ok == 0) && (right_ok == 1) ) 
                         {
 HERE_DEBUG();
                             //XXX check speed.
                             lane +=1;
                             assert( lane >= 0 && lane <= 2 );
                         }
-                        else
+                        else if( (left_ok == 1) && (right_ok == 1) ) 
                         {
 HERE_DEBUG();
                             //select the best one! currently, speed is cost.
@@ -603,6 +603,10 @@ HERE_DEBUG();
                             }
                             current = KEEP;
 HERE_DEBUG();
+                        }
+                        else
+                        {
+                            /* nothing is possible! */
                         }
 
 HERE_DEBUG();
@@ -655,6 +659,7 @@ HERE_DEBUG();
                         ptsy[i] = (shift_x *sin(0-ref_yaw)+shift_y*cos(0-ref_yaw));
                     }
 HERE_DEBUG();
+                    current = KEEP; //for next loop
 
                     tk::spline s;
 HERE_DEBUG();
