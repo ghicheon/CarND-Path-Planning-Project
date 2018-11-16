@@ -51,7 +51,7 @@ int counter = 0;
 
 int lane=1;
 float speed=0; //current speed(reference velocity).
-float speed_multiplier=1; //not used now.
+float speed_multiplier=2; //not used now.
 
 using namespace std;
 
@@ -652,7 +652,7 @@ HERE_DEBUG();
                     
 
                     //adjust speed
-                    if(speed > MAX_SPEED)
+                    if(speed >= MAX_SPEED)
                     {
                         speed = (MAX_SPEED-0.1); //0.1: just safe margin.
                     }
