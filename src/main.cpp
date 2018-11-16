@@ -24,7 +24,9 @@ enum state { KEEP ,
              PRE_RIGHT,
              PRE_LEFT, 
              LEFT, 
-             RIGHT };
+             RIGHT, 
+             EMERGENCY };
+             
 
 int current = KEEP;
 
@@ -454,18 +456,32 @@ HERE_DEBUG();
                     {
                             for(int i=0; i< sensor_fusion.size();i++)
                             {
-                                float d = sensor_fusion[i][6];
-                                if( (d < (2+4*lane+2)) && (d > (2+4*lane-2)) )
+                                double d = sensor_fusion[i][6];
+                                if( (d < (2+4*lane+2)) && (d > (2+4*lane-2)) ) //is it on the same lane?
                                 {
                                     double vx = sensor_fusion[i][3];
                                     double vy = sensor_fusion[i][4];
                                     double check_speed = sqrt(vx*vx+vy*vy);
                                     double check_car_s = sensor_fusion[i][5];
 
+
+                                    /*
+                                     * EMERGENCY!!! break now!! slowing down slowly is not enough.
+                                     */
+                                    if((check_car_s > car_s) && (check_car_s-car_s) < 1) //very cose
+                                    {
+                                        current = EMERGENCY;
+                                        //speed = check_speed - 0.224*2; //XXX
+                                        cout << "[EMERGENCY] check_car_s:" << check_car_s <<  "   " <<
+                                                             "car_s:" << car_s << "   " <<
+                                                             "lane:" << lane << "   " <<
+                                                             "d:" << d << "   " << endl;
+                                        break;
+                                    }
+
                                     check_car_s +=((double)prev_size*0.02*check_speed) ;
 
-                                    if((check_car_s > car_s) &&
-                                       (check_car_s-car_s) < 30) 
+                                    if((check_car_s > car_s) && (check_car_s-car_s) < 30) 
                                     {
                                             //consider chainging line for following 10 times.
                                             //too_close = 10; 
@@ -551,6 +567,7 @@ HERE_DEBUG();
                         {
                             //XXX check speed.
 HERE_DEBUG();
+                            cout << "left change line success!! only one choice! old:" << lane << "  new:" << lane-1 << endl;
                             lane -=1;
                             assert( lane >= 0 && lane <= 2 );
                         }
@@ -558,6 +575,8 @@ HERE_DEBUG();
                         {
 HERE_DEBUG();
                             //XXX check speed.
+
+                            cout << "right change line success!! only one choice! old:" << lane << "  new:" << lane+1 << endl;
                             lane +=1;
                             assert( lane >= 0 && lane <= 2 );
                         }
@@ -589,7 +608,7 @@ HERE_DEBUG();
                             {
 HERE_DEBUG();
                                 current = LEFT;
-                                cout << "change line success!!! old:" << lane << "  new:" << lane-1 << endl;
+                                cout << "left change line success!! from two alternatives! old:" << lane << "  new:" << lane-1 << endl;
                                 lane -=1;
 HERE_DEBUG();
                             }
@@ -597,7 +616,7 @@ HERE_DEBUG();
                             {
 HERE_DEBUG();
                                 current = RIGHT;
-                                cout << "change line success!!! old:" << lane << "  new:" << lane+1 << endl;
+                                cout << "right change line success!! from two alternatives! old:" << lane << "  new:" << lane+1 << endl;
                                 lane +=1;
 HERE_DEBUG();
                             }
@@ -611,20 +630,37 @@ HERE_DEBUG();
 
 HERE_DEBUG();
                         speed -= 0.224 * speed_multiplier;   //slowing down little bit.
-                        if(speed_multiplier != 1 )
-                            speed_multiplier -=1;
+                        //if(speed_multiplier != 1 )
+                        //    speed_multiplier -=1;
 HERE_DEBUG();
 
+                    }
+                    else if (current == EMERGENCY)
+                    {
+                        //speed_multiplier = 2;//keep applying it in the following loop
+                        speed -= 0.224 * speed_multiplier;
                     }
                     else if((speed +0.224 * speed_multiplier) < MAX_SPEED)
                     {
                         speed += 0.224 * speed_multiplier;
 
-                        if(speed_multiplier < 3 )
-                            speed_multiplier +=1;
+                        //if(speed_multiplier < 3 )
+                        //    speed_multiplier +=1;
 HERE_DEBUG();
                         
                     }
+                    
+
+                    //adjust speed
+                    if(speed > MAX_SPEED)
+                    {
+                        speed = (MAX_SPEED-0.1); //0.1: just safe margin.
+                    }
+                    else if( speed <= 0 ) //it's not going to happen though..
+                    {
+                        speed = 1;
+                    }
+
 
 HERE_DEBUG();
                     counter++;
