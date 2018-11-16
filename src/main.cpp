@@ -47,6 +47,8 @@ int cnt=0;
 //#define MAX_SPEED 200
 #define MAX_SPEED 50
 
+double max_speed = MAX_SPEED; //soft requirement
+
 int counter = 0;
 
 int lane=1;
@@ -353,6 +355,8 @@ int main() {
                     double car_yaw = j[1]["yaw"];
                     double car_speed = j[1]["speed"];
 
+                    double target_speed=MAX_SPEED;
+
                     // Previous path data given to the Planner
                     auto previous_path_x = j[1]["previous_path_x"];
                     auto previous_path_y = j[1]["previous_path_y"];
@@ -486,6 +490,7 @@ HERE_DEBUG();
                                             //consider chainging line for following 10 times.
                                             //too_close = 10; 
                                             current = FIND; 
+                                            target_speed = check_speed;
                                             break;
 
                                     }
@@ -493,6 +498,7 @@ HERE_DEBUG();
                             }
                     }
 HERE_DEBUG();
+                    max_speed = MAX_SPEED; //init
 
                     if(current == FIND )      //too_close)
                     {
@@ -563,6 +569,7 @@ HERE_DEBUG();
                         //        when there are 2 options, select the best one after calculating costs!
 
 HERE_DEBUG();
+
                         if( (left_ok == 1) && (right_ok == 0) )
                         {
                             //XXX check speed.
@@ -623,13 +630,17 @@ HERE_DEBUG();
                             current = KEEP;
 HERE_DEBUG();
                         }
-                        else
+                        else  //if( (left_ok == 0) && (right_ok == 0) ) 
                         {
-                            /* nothing is possible! */
+                            /* 
+                             * nothing is possible! 
+                             * in this case, just try to follow the front car!
+                             */
+                            max_speed = target_speed;
                         }
-
 HERE_DEBUG();
                         speed -= 0.224 * speed_multiplier;   //slowing down little bit.
+
                         //if(speed_multiplier != 1 )
                         //    speed_multiplier -=1;
 HERE_DEBUG();
@@ -640,7 +651,7 @@ HERE_DEBUG();
                         //speed_multiplier = 2;//keep applying it in the following loop
                         speed -= 0.224 * speed_multiplier;
                     }
-                    else if((speed +0.224 * speed_multiplier) < MAX_SPEED)
+                    else if((speed +0.224 * speed_multiplier) < max_speed) //soft requirement
                     {
                         speed += 0.224 * speed_multiplier;
 
