@@ -16,7 +16,7 @@
 
 #include <cmath>
 
-//#define HERE_DEBUG() printf("%s   %d\n", __func__ , __LINE__ );
+// #define HERE_DEBUG() printf("%s   %d\n", __func__ , __LINE__ );
 #define HERE_DEBUG() 
 
 enum state { KEEP , 
