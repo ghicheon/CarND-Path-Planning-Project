@@ -7,55 +7,41 @@
 #include <thread>
 #include <vector>
 #include <map>
-#include "Eigen-3.3/Eigen/Core"
-#include "Eigen-3.3/Eigen/QR"
-#include "Eigen-3.3/Eigen/Dense"
 #include "json.hpp"
 
 #include "./spline.h"
 
 #include <cmath>
 
-// #define HERE_DEBUG() printf("%s   %d\n", __func__ , __LINE__ );
-#define HERE_DEBUG() 
 
-enum state { KEEP , 
-             FIND,  //find good lane from their speed.  cost calculation!
-             PRE_RIGHT,
-             PRE_LEFT, 
-             LEFT, 
-             RIGHT, 
-             EMERGENCY };
+enum state_type { KEEP, 
+                  LEFT,
+                  RIGHT,
+                  PRE_LEFT,
+                  PRE_RIGHT };
+
+char * i_to_s[] =  { "KEEP", "LEFT", "RIGHT", "PRE_LEFT" ,"PRE_RIGHT" };
+
+char * itos(int i) 
+{
+    return i_to_s[i];
+}
+
              
+int ignore_cnt_xxx = 0;
 
-int current = KEEP;
-
-double    g_prev_s_;
-double    g_prev_d_;
-
-//#include "Eigen-3.3/Eigen/Core"
-//#include "Eigen-3.3/Eigen/QR"
+int state = KEEP;
+int backup_state = PRE_RIGHT; //for printing at first
 
 using namespace std;
-using Eigen::MatrixXd;
-using Eigen::VectorXd;
-
-
-
-int cnt=0;
 
 //#define MAX_SPEED 200
-#define MAX_SPEED 50
+#define MAX_SPEED 49.5
 
-double max_speed = MAX_SPEED; //soft requirement
-
-int counter = 0;
+float max_speed= MAX_SPEED;  //soft
 
 int lane=1;
-float speed=0; //current speed(reference velocity).
-float speed_multiplier=2; //not used now.
-
-using namespace std;
+float speed=0; //state speed(reference velocity).
 
 // for convenience
 using json = nlohmann::json;
@@ -243,52 +229,132 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
 
 }
 
-///////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////
-class Vehicle {
-    public:
-
-    vector<double> state;
-
-    Vehicle( double s, double s_ , double s__ , double d, double d_, double d__ )
-    {
-        state.push_back(s);
-        state.push_back(s_);
-        state.push_back(s__);
-        state.push_back(d);
-        state.push_back(d_);
-        state.push_back(d__);
-    }
-    ~Vehicle() {}
-
-    vector<double>  state_in(double t) 
-    {
-        //vector<double> s = start_state[:3]
-        //vector<double> d = start_state[3:]
-        //state[0+]: s
-        //state[3+]: d
-        state.push_back( state[0] + (state[1] * t) + state[2] * t*t / 2.0 );
-        state.push_back( state[1] + state[2] * t );
-        state.push_back( state[2] );
-        state.push_back( state[3+0] + (state[3+1] * t) + state[3+2] * t*t / 2.0 );
-        state.push_back( state[3+1] + (state[3+2] * t) );
-        state.push_back( state[3+2] );
-
-        return state;
-    }
-
-};
 
 
-map<unsigned int, Vehicle*> carMap; //manage all cars!
+#define CHANGE_STATE(s)                             \
+        if( state != s ){                         \
+          cout << endl;  \
+          cout << "state :" << itos(state) << " ---> " ; \
+          state = s;                               \
+          cout << itos(state) << "        " << __LINE__ << endl;  \
+        } 
 
-//6 coefficient & time
-int getResult(vector<double> xx , unsigned int t)
+/*
+ * assumption:  all cars of same lane have the same speed.
+ *
+ * return next state
+ */
+//#define CONSIDER_ALTERNATIVES( new_state , consider_left,consider_right)                    
+#define CONSIDER_ALTERNATIVES( new_state , consider_left,consider_right)                    \
+        do                                                                                  \
+        {                                                                                   \
+            int left_ok = (lane != 0) ? 1 : 0;                                              \
+            int right_ok= (lane != 2) ? 1 : 0;                                              \
+            double left_speed=0;                                                            \
+            double right_speed=0;                                                           \
+            for(int i=0; i< sensor_fusion.size();i++)                                       \
+            {                                                                               \
+                double  x = sensor_fusion[i][1];                                            \
+                double  y = sensor_fusion[i][2];                                            \
+                double vx = sensor_fusion[i][3];                                            \
+                double vy = sensor_fusion[i][4];                                            \
+                double  s = sensor_fusion[i][5];                                            \
+                double  d = sensor_fusion[i][6];                                            \
+                if( consider_right == 1 )                                                   \
+                {                                                                           \
+                        if( (lane == 0) || (lane == 1) )                                    \
+                        {                                                                   \
+                                if( (d < (2+4*(lane+1)+2)) && (d > (2+4*(lane+1)-2)) )      \
+                                {                                                           \
+                                    if( (s < (car_s+15)) && (s > (car_s-20)) )              \
+                                    {                                                       \
+                                            right_ok = 0;                                   \
+                                    }                                                       \
+                                                                                            \
+                                    right_speed = sqrt(vx*vx+vy*vy);                        \
+                                }                                                           \
+                                                                                            \
+                        }                                                                   \
+                }                                                                           \
+                                                                                            \
+                if( consider_left == 1 )                                                    \
+                {                                                                           \
+                        if( (lane == 2) || (lane == 1) )                                    \
+                        {                                                                   \
+                                if( (d < (2+4*(lane-1)+2)) && (d > (2+4*(lane-1)-2)) )      \
+                                {                                                           \
+                                    if( (s < (car_s+15)) && (s > (car_s-20)) )              \
+                                    {                                                       \
+                                            left_ok = 0;                                    \
+                                    }                                                       \
+                                    left_speed = sqrt(vx*vx+vy*vy);                         \
+                                }                                                           \
+                        }                                                                   \
+                 }                                                                          \
+            }                                                                               \
+car_speed =10; /*XXXXXXXXXXXXXXXXXXXchange line as many as possibleXXXXXXXXXXXXXXXXX*/      \
+            assert( lane >= 0 && lane <= 2 );                                               \
+                                                                                            \
+            if( (left_ok == 1) && (right_ok == 0) )                                         \
+            {                                                                               \
+                new_state =  (car_speed < left_speed) ? LEFT : KEEP;                        \
+            }                                                                               \
+            else if( (left_ok == 0) && (right_ok == 1) )                                    \
+            {                                                                               \
+                new_state =  (car_speed < right_speed) ? RIGHT : KEEP;                      \
+            }                                                                               \
+            else if( (left_ok == 1) && (right_ok == 1) )                                    \
+            {                                                                               \
+                if( left_speed > right_speed &&  left_speed > car_speed )                   \
+                {                                                                           \
+                    new_state =   LEFT;                                                     \
+                }                                                                           \
+                else  if( left_speed < right_speed &&  right_speed > car_speed )            \
+                {                                                                           \
+                    new_state =  RIGHT;                                                     \
+                }                                                                           \
+                else                                                                        \
+                {                                                                           \
+                    new_state =  KEEP;                                                      \
+                }                                                                           \
+            }                                                                               \
+            else if( (left_ok == 0) && (right_ok == 0) )                                    \
+            {                                                                               \
+                if( left_speed > right_speed )                                              \
+                {                                                                           \
+                    new_state =  (car_speed < left_speed) ? PRE_LEFT : KEEP;                \
+                }                                                                           \
+                else                                                                        \
+                {                                                                           \
+                    new_state =  (car_speed < right_speed) ? PRE_RIGHT : KEEP;              \
+                }                                                                           \
+            }                                                                               \
+                                                                                            \
+            CHANGE_STATE(new_state);                                                        \
+        } while(0)                                                                                                     
+
+
+
+
+                                                                                                                       
+double get_proper_speed(double spd, double speed_change) 
 {
+    //soft requirement
+    if( spd   > max_speed) 
+        spd -= 0.1 ;
+    else if((spd + speed_change ) < max_speed  ) 
+        spd += speed_change;
 
-    return xx[0] + xx[1]*t + xx[2]*t*t  + xx[3]*t*t*t + xx[4]*t*t*t*t + xx[5]*t*t*t*t*t ;
+
+    //hard requirement
+    if( spd > MAX_SPEED) 
+    {
+        spd = MAX_SPEED;
+
+    }
+    
+    return spd;
 }
-
 
 
 int main() {
@@ -355,8 +421,6 @@ int main() {
                     double car_yaw = j[1]["yaw"];
                     double car_speed = j[1]["speed"];
 
-                    double target_speed=MAX_SPEED;
-
                     // Previous path data given to the Planner
                     auto previous_path_x = j[1]["previous_path_x"];
                     auto previous_path_y = j[1]["previous_path_y"];
@@ -368,6 +432,7 @@ int main() {
                     auto sensor_fusion = j[1]["sensor_fusion"];
 
                     int prev_size = previous_path_x.size();
+                    double speed_change = 0;
 
                     json msgJson;
 
@@ -377,10 +442,8 @@ int main() {
                     double ref_x = car_x;
                     double ref_y = car_y;
                     double ref_yaw = deg2rad(car_yaw);
-HERE_DEBUG();
                     if(prev_size < 2)
                     {
-HERE_DEBUG();
                         double prev_car_x = car_x - cos(car_yaw);
                         double prev_car_y = car_y - sin(car_yaw);
                         ptsx.push_back(prev_car_x);
@@ -391,7 +454,6 @@ HERE_DEBUG();
                     }
                     else
                     {
-HERE_DEBUG();
                         ref_x = previous_path_x[prev_size-1];
                         ref_y = previous_path_y[prev_size-1];
 
@@ -407,280 +469,165 @@ HERE_DEBUG();
                         ptsy.push_back(ref_y_prev);
                         ptsy.push_back(ref_y);
                     }
-HERE_DEBUG();
 
-                    for(int i=0; i< sensor_fusion.size();i++)
-                    {
-                        unsigned int  id = sensor_fusion[i][0];
-                        double  x = sensor_fusion[i][1];
-                        double  y = sensor_fusion[i][2];
-                        double vx = sensor_fusion[i][3];
-                        double vy = sensor_fusion[i][4];
-
-                        double  s = sensor_fusion[i][5];
-                        double  d = sensor_fusion[i][6];
-                        //double check_speed = sqrt(vx*vx+vy*vy);
-
-                        if( cnt == 0 ) //first sensor data!
-                        {
-                            delete carMap[id]; //XXX use it again...
-                            carMap[id] = new Vehicle(s,s,s,s,s,s); //0.0,0.0,d,0.0,0.0);
-                        }
-                        else
-                        {
-                            double prev_s = carMap[id]->state[0];
-                            double prev_s_ = carMap[id]->state[1];
-                            double prev_d = carMap[id]->state[4];
-                            double prev_d_ = carMap[id]->state[5];
-                            double s_  = abs(prev_s - s) /0.02;
-                            double s__ = abs(prev_s_ - s_ )/0.02;
-                            double d_  = abs(prev_d - d)/0.02;
-                            double d__ = abs(prev_d_ - d_)/0.02;
-                            carMap[id] = new Vehicle(s ,s_ ,s__ ,d ,d_ ,d__ );
-                        }
-
-
-HERE_DEBUG();
-                    }
-
-HERE_DEBUG();
-
-                    //TODO:define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
+                    //TODO:define a path made up of (x,y) points 
+                    //that the car will visit sequentially every .02 seconds
 
                     if(prev_size > 0 )
                     {
                         car_s = end_path_s;
                     }
 
-                    unsigned int too_close = 0;
+                    //CORE START/////////////////////////////////////////////////////////////////
 
-HERE_DEBUG();
-                
-                    if( current == KEEP )     //too_close  == 0 )
+                    //debug msg
+                    if( backup_state  != state )
                     {
-                            for(int i=0; i< sensor_fusion.size();i++)
-                            {
-                                double d = sensor_fusion[i][6];
-                                if( (d < (2+4*lane+2)) && (d > (2+4*lane-2)) ) //is it on the same lane?
-                                {
-                                    double vx = sensor_fusion[i][3];
-                                    double vy = sensor_fusion[i][4];
-                                    double check_speed = sqrt(vx*vx+vy*vy);
-                                    double check_car_s = sensor_fusion[i][5];
-
-
-                                    /*
-                                     * EMERGENCY!!! break now!! slowing down slowly is not enough.
-                                     */
-                                    if((check_car_s > car_s) && (check_car_s-car_s) < 1) //very cose
-                                    {
-                                        current = EMERGENCY;
-                                        //speed = check_speed - 0.224*2; //XXX
-                                        cout << "[EMERGENCY] check_car_s:" << check_car_s <<  "   " <<
-                                                             "car_s:" << car_s << "   " <<
-                                                             "lane:" << lane << "   " <<
-                                                             "d:" << d << "   " << endl;
-                                        break;
-                                    }
-
-                                    check_car_s +=((double)prev_size*0.02*check_speed) ;
-
-                                    if((check_car_s > car_s) && (check_car_s-car_s) < 30) 
-                                    {
-                                            //consider chainging line for following 10 times.
-                                            //too_close = 10; 
-                                            current = FIND; 
-                                            target_speed = check_speed;
-                                            break;
-
-                                    }
-                                }
-                            }
+                        cout << "[DEBUG] current state: " << itos(state) << endl;
                     }
-HERE_DEBUG();
-                    max_speed = MAX_SPEED; //init
+                    backup_state  = state;
 
-                    if(current == FIND )      //too_close)
+
+
+                    for(int i=0; i< sensor_fusion.size();i++)
                     {
-                        //first, find close left car and right one.
-                        int left_ok = (lane != 0) ? 1 : 0;
-                        int right_ok= (lane != 2) ? 1 : 0;
-                        double dist;
-                        double closest_right=-1;
-                        double closest_right_dist=999999;
-                        double closest_left=-1;
-                        double closest_left_dist=999999;
-                        for(int i=0; i< sensor_fusion.size();i++)
+                        double d = sensor_fusion[i][6];
+                        if( (d < (2+4*lane+2)) && (d > (2+4*lane-2)) ) //is it on the same lane?
                         {
-                            double  x = sensor_fusion[i][1];
-                            double  y = sensor_fusion[i][2];
                             double vx = sensor_fusion[i][3];
                             double vy = sensor_fusion[i][4];
-                            double  s = sensor_fusion[i][5];
-                            double  d = sensor_fusion[i][6];
+                            double check_speed = sqrt(vx*vx+vy*vy);
+                            double check_car_s = sensor_fusion[i][5];
 
+                            check_car_s +=((double)prev_size*0.02*check_speed) ;
 
-                            if( (lane == 0) || (lane == 1) )  //check right
+//if( ignore_cnt_xxx > 0 )
+//    ignore_cnt_xxx--;
+
+//cout << ignore_cnt_xxx ;
+
+                            //blocked!
+                            if((check_car_s > car_s) && ((check_car_s-car_s) < 30) && ignore_cnt_xxx == 0 )  
                             {
-                                    if( (d < (2+4*(lane+1)+2)) && (d > (2+4*(lane+1)-2)) )
+                                    int new_state=-1;
+                                    cout << "block detected!!!" <<endl;
+
+                                    if( state == KEEP ) //XXXXXXX
                                     {
-                                        if( (s < (car_s+30)) && (s > (car_s-35)) ) // +/- something!
-                                        {
-                                                right_ok = 0;
-                                        }
-                                        else
-                                        {
-                                                //try to find the closest right car from ego car.
-                                                dist = distance(car_x,car_y, x,y);
-                                                if( closest_right_dist   > dist )
-                                                {
-                                                    closest_right = i;
-                                                    closest_right_dist = dist;
-                                                }
-                                        }
-                                    }
+                                            //net_state will be set in this function!
+                                            CONSIDER_ALTERNATIVES(new_state,1,1); 
+                                            
+                                            switch(new_state)
+                                            {
+                                                case LEFT:
+                                                     cout << "left success!!" <<  
+                                                               "old:" << lane << "  new:" << lane-1 << endl;
+                                                     lane -=1;
+                                                     CHANGE_STATE(KEEP);
+//ignore_cnt_xxx = 200;//XXXXXXXXXXXX
+                                                     break;
 
-                            }
+                                                case RIGHT:
+                                                     cout << "right success!!" << 
+                                                              "old:" <<  lane << "  new:" << lane+1 << endl;
+                                                     lane +=1;
+                                                     CHANGE_STATE(KEEP);
+//ignore_cnt_xxx = 200;//XXXXXXXXXXXX
+                                                     break;
 
-                            if( (lane == 2) || (lane == 1) ) // left
-                            {
-                                    if( (d < (2+4*(lane-1)+2)) && (d > (2+4*(lane-1)-2)) )
-                                    {
-                                        if( (s < (car_s+30)) && (s > (car_s-35)) ) // +/- something!
-                                        {
-                                                left_ok = 0;
-                                        }
-                                        else
-                                        {
-                                                dist = distance(car_x,car_y, x,y);
-                                                if( closest_left_dist   > dist )
-                                                {
-                                                    closest_left = i;
-                                                    closest_left_dist = dist;
-                                                }
-                                        }
-                                    }
+                                                case PRE_LEFT:
+                                                     speed_change += -0.1;
+                                                     break;
 
-                            }
-                        }
-HERE_DEBUG();
+                                                case PRE_RIGHT:
+                                                     speed_change += -0.1;
+                                                     break;
 
-                        //second, change lane if it's possible. 
-                        //        when there are 2 options, select the best one after calculating costs!
+                                                case KEEP:
+                                                     speed_change += -0.2;
+                                                     break;
+                                                default:
+                                                     assert(0);
+                                                     break;
+                                                
+                                            } //switch
 
-HERE_DEBUG();
+                                    } //KEEP
 
-                        if( (left_ok == 1) && (right_ok == 0) )
-                        {
-                            //XXX check speed.
-HERE_DEBUG();
-                            cout << "left change line success!! only one choice! old:" << lane << "  new:" << lane-1 << endl;
-                            lane -=1;
-                            assert( lane >= 0 && lane <= 2 );
-                        }
-                        else if( (left_ok == 0) && (right_ok == 1) ) 
-                        {
-HERE_DEBUG();
-                            //XXX check speed.
+                                    speed_change += -0.224;
+cout << "\nspeed down -0.224!!! XXXXX   state:" << itos(state) <<  "   speed:" << speed << endl ;
+            
+                                    break; //goto xx;
 
-                            cout << "right change line success!! only one choice! old:" << lane << "  new:" << lane+1 << endl;
-                            lane +=1;
-                            assert( lane >= 0 && lane <= 2 );
-                        }
-                        else if( (left_ok == 1) && (right_ok == 1) ) 
-                        {
-HERE_DEBUG();
-                            //select the best one! currently, speed is cost.
-                            double vx ;
-                            double vy ;
-                            double left_speed=0;
-                            double right_speed=0;
-
-                            if(closest_left != -1  )
-                            {
-                                    vx = sensor_fusion[closest_left][3];
-                                    vy = sensor_fusion[closest_left][4];
-                                    left_speed = sqrt(vx*vx+vy*vy);
-                            }
-
-                            if(closest_right != -1  )
-                            {
-                                    vx = sensor_fusion[closest_right][3];
-                                    vy = sensor_fusion[closest_right][4];
-                                    right_speed = sqrt(vx*vx+vy*vy);
-                            }
-HERE_DEBUG();
-
-                            if( left_speed > right_speed ) 
-                            {
-HERE_DEBUG();
-                                current = LEFT;
-                                cout << "left change line success!! from two alternatives! old:" << lane << "  new:" << lane-1 << endl;
-                                lane -=1;
-HERE_DEBUG();
-                            }
-                            else
-                            {
-HERE_DEBUG();
-                                current = RIGHT;
-                                cout << "right change line success!! from two alternatives! old:" << lane << "  new:" << lane+1 << endl;
-                                lane +=1;
-HERE_DEBUG();
-                            }
-                            current = KEEP;
-HERE_DEBUG();
-                        }
-                        else  //if( (left_ok == 0) && (right_ok == 0) ) 
-                        {
-                            /* 
-                             * nothing is possible! 
-                             * in this case, just try to follow the front car!
-                             */
-                            max_speed = target_speed;
-                        }
-HERE_DEBUG();
-                        speed -= 0.224 * speed_multiplier;   //slowing down little bit.
-
-                        //if(speed_multiplier != 1 )
-                        //    speed_multiplier -=1;
-HERE_DEBUG();
-
+                            } //blocked
+                        } //if( (d < (2+4*lane+2)) && (d > (2+4*lane-2)) ) //is it on the same lane?
                     }
-                    else if (current == EMERGENCY)
+
+//xx:
+
+                    if( state == PRE_LEFT )    
                     {
-                        //speed_multiplier = 2;//keep applying it in the following loop
-                        speed -= 0.224 * speed_multiplier;
+                            int new_state=-1;
+
+                            CONSIDER_ALTERNATIVES( new_state , 1,0);
+                            switch(new_state)
+                            {
+                                case LEFT:
+                                     cout << "[left success] pre_left -> left" <<  
+                                                     "old:" << lane << "  new:" << lane-1 << endl;
+                                     lane -=1;
+                                     CHANGE_STATE(KEEP);
+//ignore_cnt_xxx = 200;//XXXXXXXXXXXX
+                                     break;
+
+                                case PRE_LEFT:
+                                     speed_change += -0.01 ; //slow down.
+cout <<"\nPRE_LEFT -0.01" <<  "   speed:" << speed << endl ;
+                                     break;
+
+                                case KEEP:
+                                     break;
+
+                                default:
+                                     assert(0);
+                                     break;
+
+                            }
                     }
-                    else if((speed +0.224 * speed_multiplier) < max_speed) //soft requirement
+                    else if( state == PRE_RIGHT )    
                     {
-                        speed += 0.224 * speed_multiplier;
+                            int new_state;
 
-                        //if(speed_multiplier < 3 )
-                        //    speed_multiplier +=1;
-HERE_DEBUG();
-                        
+                            CONSIDER_ALTERNATIVES( new_state , 0,1);
+                            
+                            switch(new_state)
+                            {
+                                case RIGHT:
+                                     cout << "[right success] pre_right -> right" << 
+                                                     "old:" <<  lane << "  new:" << lane+1 << endl;
+                                     lane +=1;
+                                     CHANGE_STATE(KEEP);
+//ignore_cnt_xxx = 200;//XXXXXXXXXXXX
+                                     break;
+
+                                case PRE_RIGHT:
+                                     speed_change +=  -0.01 ; 
+cout <<"\nPRE_RIGHT -0.01"  << "    speed:" << speed <<endl;
+                                     break;
+
+                                case KEEP:
+                                     break;
+
+                                default:
+                                     assert(0);
+                                     break;
+                            }
                     }
-                    
-
-                    //adjust speed
-                    if(speed >= MAX_SPEED)
-                    {
-                        speed = (MAX_SPEED-0.1); //0.1: just safe margin.
-                    }
-                    else if( speed <= 0 ) //it's not going to happen though..
-                    {
-                        speed = 1;
-                    }
 
 
-HERE_DEBUG();
-                    counter++;
+                    speed = get_proper_speed(speed, speed_change == 0 ? 0.224 : speed_change);
 
-                    too_close--;
-
-
-HERE_DEBUG();
-
+                    //CORE END//////////////////////////////////////////////////////////////////////////
 
                     vector<double> next_wp0 = 
                             getXY(car_s+30, 4*lane+2 ,map_waypoints_s, map_waypoints_x,map_waypoints_y);
@@ -688,7 +635,6 @@ HERE_DEBUG();
                             getXY(car_s+60, 4*lane+2 ,map_waypoints_s, map_waypoints_x,map_waypoints_y);
                     vector<double> next_wp2 = 
                             getXY(car_s+90, 4*lane+2  ,map_waypoints_s, map_waypoints_x,map_waypoints_y);
-HERE_DEBUG();
 
                     ptsx.push_back(next_wp0[0]);
                     ptsx.push_back(next_wp1[0]);
@@ -705,13 +651,9 @@ HERE_DEBUG();
                         ptsx[i] = (shift_x *cos(0-ref_yaw)-shift_y*sin(0-ref_yaw));
                         ptsy[i] = (shift_x *sin(0-ref_yaw)+shift_y*cos(0-ref_yaw));
                     }
-HERE_DEBUG();
-                    current = KEEP; //for next loop
 
                     tk::spline s;
-HERE_DEBUG();
                     s.set_points(ptsx,ptsy);
-HERE_DEBUG();
 
                     vector<double> next_x_vals;
                     vector<double> next_y_vals;
@@ -725,7 +667,6 @@ HERE_DEBUG();
                     double target_x=30.0;
                     double target_y = s(target_x);
                     double target_dist = sqrt(target_x*target_x + target_y*target_y);
-HERE_DEBUG();
 
 
                     double x_add_on=0;
@@ -746,11 +687,6 @@ HERE_DEBUG();
                         next_x_vals.push_back(x_point);
                         next_y_vals.push_back(y_point);
                     }
-
-HERE_DEBUG();
-                    //std::cout << "cnt-----------------------:" <<  cnt   << std::endl;
-                    cnt++;
-//////////////////////////////////////////////////////////////////////////////////////////////
 
                     msgJson["next_x"] = next_x_vals;
                     msgJson["next_y"] = next_y_vals;
@@ -815,3 +751,5 @@ double dist_inc = 0.5;
           next_y_vals.push_back(car_y+(dist_inc*i)*sin(deg2rad(car_yaw)));
     }
 #endif
+
+
