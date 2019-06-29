@@ -1,4 +1,3 @@
-
 #include <fstream>
 #include <math.h>
 #include <uWS/uWS.h>
@@ -13,44 +12,72 @@
 
 #include <cmath>
 
-#define PRE_COUNTER_INIT    (50*5)
+/*
+ * PRE_LEFT,PRE_RIGHT states have time limit.
+ * If time is exceeded,I must be better to consider another way.
+ */
+#define PRE_COUNTER_INIT    (50*5)    //5 seconds  since the car moves 50 times a second.
 
-#define PRE_COUNTER_DEC_SPEED_COUNT     50
+/*
+ * In pre states, the car is slowing down. but It has time limit, if not, the car will stop.
+ */
+#define PRE_COUNTER_DEC_SPEED_COUNT     50   //1 seconds 
 
-#define DOING_ACTION_COUNT_INIT  200
+/*
+ * Well, spline is used for changing lane. it took some time changing line in the state LEFT,RIGHT.
+ * After it, the state will be KEEP.
+ */
+#define DOING_ACTION_COUNT_INIT  (50*4)       //4 seconds
+
+/*
+ * When changing lane, there must be no cars when ego car is on the way to the next lane.
+ */
+#define FRONT_MARGIN 35
+#define BACK_MARGIN 10
 
 
 /*
- * when there is no car ahead, ego car sometimes stops  due to PRE_LEFT or PRE_RIGHT.
- * because these states decress speed. this variable is trying to avoid it!!
+ * When there is no car ahead, ego car sometimes stops  due to PRE_LEFT or PRE_RIGHT.
+ * because these states decress speed. this variable is trying to avoid it!
  */
 int pre_counter = 0;
+
+/*  
+ * In the state LEFT, this variable is set to DOING_ACTION_COUNT_INIT.
+ * This value is decreasing by time. when it reaches 0, the state will be KEEP.
+ */
 int doing_action_count=0;
 
 enum state_type { KEEP, 
                   LEFT,
                   RIGHT,
                   PRE_LEFT,
-                  PRE_RIGHT };
+                  PRE_RIGHT,
+                  STATE_LEN};
 
-char * i_to_s[] =  { "KEEP", "LEFT", "RIGHT", "PRE_LEFT" ,"PRE_RIGHT" };
 
+// (char*) : to avoid compiler warning messages.
+char * i_to_s[STATE_LEN] =  { (char*)"KEEP", (char*)"LEFT", (char*)"RIGHT", 
+                              (char*)"PRE_LEFT" ,(char*)"PRE_RIGHT" };
+
+//get the string using index.
 char * itos(int i) 
 {
     return i_to_s[i];
 }
 
-             
-
 int state = KEEP;
-int backup_state_debug = PRE_RIGHT; //for printing at first
+
+//it's just for find out if state is changed.
+//PRE_RIGHT:for printing at first.
+int prev_state = PRE_RIGHT; 
 
 using namespace std;
 
-//#define MAX_SPEED 200
-#define MAX_SPEED 49.7
+//#define MAX_SPEED 200         //just for test~~
+#define MAX_SPEED 49.7       //hard requirement
 
-float max_speed= MAX_SPEED;  //soft
+float max_speed= MAX_SPEED;  //soft requirement
 
 int lane=1;
 float speed=0; //state speed(reference velocity).
@@ -111,34 +138,6 @@ int ClosestWaypoint(double x, double y, const vector<double> &maps_x, const vect
 
 }
 
-
-
-//consider ONLY around s and ONLY at d !!
-//return true or false
-//it's based on ClosestWaypoint().
-int IsSafe(double x, double y,  const vector<double> &maps_x, const vector<double> &maps_y,
-           double s, double d)
-{
-
-    double closestLen = 100000; //large number
-    int closestWaypoint = 0;
-
-    for(int i = 0; i < maps_x.size(); i++)
-    {
-        double map_x = maps_x[i];
-        double map_y = maps_y[i];
-        double dist = distance(x,y,map_x,map_y);
-        if(dist < closestLen)
-        {
-            closestLen = dist;
-            closestWaypoint = i;
-        }
-
-    }
-
-    return closestWaypoint;
-
-}
 int NextWaypoint(double x, double y, double theta, const vector<double> &maps_x, const vector<double> &maps_y)
 {
 
@@ -254,12 +253,24 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
         }
 
 /*
- * assumption:  all cars of same lane have the same speed.
+ * next_state: will be filled with next state.
+ * consider_left: consider left lane 
+ * consider_right: consider right lane 
  *
  * return next state
+ *
+ * - this function make a choice by using lane lane speed and right lane speed.
+ *   when there is 2 options, It must better to choose a speedy lane!.
+ * - lane speed is measured by the closest car.
+ *
+ * 
+ * FYI, It must be better to write a normal function not a macro one.
+ * But I couldn't make it because auto arguments are not allowed in default compiler setting.
+ * It can be done by -std=c++14 .
+ * (https://stackoverflow.com/questions/29944985/is-there-a-way-to-pass-auto-as-an-argument-in-c)
+ * But I am a lazy guy & I don't want to bother reviwers.I decided to write it as a macro function.
  */
-//#define CONSIDER_ALTERNATIVES( new_state , consider_left,consider_right)                    
-#define CONSIDER_ALTERNATIVES( new_state , consider_left,consider_right)                    \
+#define CONSIDER_ALTERNATIVES( next_state , consider_left,consider_right)                    \
         do                                                                                  \
         {                                                                                   \
             int left_ok = (lane != 0) ? 1 : 0;                                              \
@@ -271,8 +282,8 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
                                                                                             \
             double closest_right_dist=999999;                                               \
             double closest_left_dist=999999;                                                \
-            double closest_right_speed=0;                                                \
-            double closest_left_speed=0;                                                \
+            double closest_right_speed=0;                                                   \
+            double closest_left_speed=0;                                                    \
                                                                                             \
             for(int i=0; i< sensor_fusion.size();i++)                                       \
             {                                                                               \
@@ -288,15 +299,15 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
                                                                                             \
                         if( (lane == 0) || (lane == 1) )                                    \
                         {                                                                   \
-                                right_speed = sqrt(vx*vx+vy*vy);                                    \
-                                s +=((double)prev_size*0.02*right_speed) ;                          \
+                                right_speed = sqrt(vx*vx+vy*vy);                            \
+                                s +=((double)prev_size*0.02*right_speed) ;                  \
                                 if( (d < (2+4*(lane+1)+2)) && (d > (2+4*(lane+1)-2)) )      \
                                 {                                                           \
                                     if(( s > car_s) && (( s - car_s) < 30) )                \
                                     {                                                       \
                                             right_ok = 0;                                   \
                                     }                                                       \
-                                    if( (s < (car_s+50)) && (s > (car_s-10)) )              \
+                                    if((s < (car_s+FRONT_MARGIN)) && (s > (car_s-BACK_MARGIN)) ) \
                                     {                                                       \
                                             right_ok = 0;                                   \
                                     }                                                       \
@@ -306,8 +317,8 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
                                 dist = distance(car_x,car_y, x,y);                          \
                                 if( closest_right_dist   > dist )                           \
                                 {                                                           \
-                                    closest_right_dist  = dist;                              \
-                                    closest_right_speed = right_speed;                       \
+                                    closest_right_dist  = dist;                             \
+                                    closest_right_speed = right_speed;                      \
                                 }                                                           \
                         }                                                                   \
                 }                                                                           \
@@ -316,79 +327,89 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
                 {                                                                           \
                         if( (lane == 2) || (lane == 1) )                                    \
                         {                                                                   \
-                                left_speed = sqrt(vx*vx+vy*vy);                                     \
-                                s +=((double)prev_size*0.02*left_speed) ;                           \
+                                left_speed = sqrt(vx*vx+vy*vy);                             \
+                                s +=((double)prev_size*0.02*left_speed) ;                   \
                                 if( (d < (2+4*(lane-1)+2)) && (d > (2+4*(lane-1)-2)) )      \
                                 {                                                           \
                                     if(( s > car_s) && (( s - car_s) < 30) )                \
                                     {                                                       \
                                             left_ok = 0;                                    \
                                     }                                                       \
-                                    if( (s < (car_s+50)) && (s > (car_s-10)) )              \
+                                    if( (s < (car_s+FRONT_MARGIN)) && (s > (car_s-BACK_MARGIN)))\
                                     {                                                       \
                                             left_ok = 0;                                    \
                                     }                                                       \
                                 }                                                           \
                                 dist = distance(car_x,car_y, x,y);                          \
-                                if( closest_left_dist   > dist )                           \
+                                if( closest_left_dist   > dist )                            \
                                 {                                                           \
                                     closest_left_dist  = dist;                              \
-                                    closest_left_speed = left_speed;                       \
+                                    closest_left_speed = left_speed;                        \
                                 }                                                           \
                         }                                                                   \
                  }                                                                          \
             }                                                                               \
-            right_speed = closest_right_speed;                       \
-            left_speed = closest_left_speed;                       \
-car_speed =1; /*XXXXXXXXXXXXXXXXXXXchange line if possible              XXXXXXXXXXX*/      \
+            right_speed = closest_right_speed;      /*result!!!*/                           \
+            left_speed = closest_left_speed;        /*result!!!*/                           \
+            /*car_speed =1;  change lane as many as possible.. */                           \
             assert( lane >= 0 && lane <= 2 );                                               \
-cout << "[lok,rok,lspd,rspd,carspd:" <<  left_ok << "," << right_ok << "," << left_speed << "," << right_speed << "," << car_speed  << "]" ;\
+            cout << "[lok,rok,lspd,rspd,carspd:" <<  left_ok << "," << right_ok << "," <<   \
+                      left_speed << "," << right_speed << "," << car_speed  << "]" ;        \
+            /* find the best choice! */                                                     \
             if( (left_ok == 1) && (right_ok == 0) )                                         \
             {                                                                               \
-                new_state =  (car_speed < left_speed) ? LEFT : KEEP;                        \
+                next_state =  LEFT;                                                         \
+                /*next_state =  (car_speed < left_speed) ? LEFT : KEEP; */                  \
             }                                                                               \
             else if( (left_ok == 0) && (right_ok == 1) )                                    \
             {                                                                               \
-                new_state =  (car_speed < right_speed) ? RIGHT : KEEP;                      \
+                next_state =  RIGHT ;                                                       \
+                /*next_state =  (car_speed < right_speed) ? RIGHT : KEEP;*/                 \
             }                                                                               \
-            else if( (left_ok == 1) && (right_ok == 1) )                                    \
+            else if( (left_ok == 1) && (right_ok == 1) )    /*best one will be selected*/   \
             {                                                                               \
                 if( left_speed > right_speed &&  left_speed > car_speed )                   \
                 {                                                                           \
-                    new_state =   LEFT;                                                     \
+                    next_state =   LEFT;                                                    \
                 }                                                                           \
                 else  if( left_speed < right_speed &&  right_speed > car_speed )            \
                 {                                                                           \
-                    new_state =  RIGHT;                                                     \
+                    next_state =  RIGHT;                                                    \
                 }                                                                           \
-                else                                                            \
+                else                                                                        \
                 {                                                                           \
-                    new_state =  RIGHT;            /*default*/                               \
+                    next_state =  RIGHT;            /*default*/                             \
                 }                                                                           \
             }                                                                               \
             else if( (left_ok == 0) && (right_ok == 0) )                                    \
             {                                                                               \
                 if( left_speed > right_speed )                                              \
                 {                                                                           \
-                    new_state =  (car_speed < left_speed) ? PRE_LEFT : KEEP;                \
+                    next_state =  (car_speed < left_speed) ? PRE_LEFT : KEEP;               \
                 }                                                                           \
                 else                                                                        \
                 {                                                                           \
-                    new_state =  (car_speed < right_speed) ? PRE_RIGHT : KEEP;              \
+                    next_state =  (car_speed < right_speed) ? PRE_RIGHT : KEEP;             \
                 }                                                                           \
             }                                                                               \
                                                                                             \
-            CHANGE_STATE(new_state);                                                        \
+            CHANGE_STATE(next_state);                                                       \
         } while(0)                                                                                                     
 
 
 
 
                                                                                                                        
+/* 
+ * speed must not be exceeding speed limit!
+ *
+ *  max_speed: soft requirement. when blocking car is front and there is no options 
+ *             it will be better to following the front car!!!
+ *  MAX_SPEED: hard requirement!
+ */
 double get_proper_speed(double spd, double speed_change) 
 {
 
-    //cout << "\nget_proper_speed() " << spd << " " << max_speed << endl;
     if( spd   > max_speed) 
         spd -= 0.224 ; //slow down slowly to avoid jerk.
     else if((spd + speed_change ) < max_speed  ) 
@@ -525,28 +546,29 @@ int main() {
 
 ////////////////////CORE START/////////////////////////////////////////////////////////////////
 
-pre_counter--;
-if( (state == PRE_LEFT || state == PRE_RIGHT) && (pre_counter == 0) )
-{
-    CHANGE_STATE(KEEP);                             \
-}
+                    //PRE_LEFT/PRE_RIGHT -> KEEP
+                    pre_counter--;
+                    if( (state == PRE_LEFT || state == PRE_RIGHT) && (pre_counter == 0) )
+                    {
+                        CHANGE_STATE(KEEP);                             \
+                    }
+                   
+                    //LEFT/RIGHT -> KEEP
+                    doing_action_count--;
+                    if( (state == LEFT || state == RIGHT) && (doing_action_count == 0))
+                    {
+                        CHANGE_STATE(KEEP);                             \
+                    }
 
-
-doing_action_count--;
-if( (state == LEFT || state == RIGHT) && (doing_action_count == 0))
-{
-    CHANGE_STATE(KEEP);                             \
-}
-
-                    //debug msg
-                    if( backup_state_debug  != state )
+                    //debug message!
+                    if( prev_state  != state )
                     {
                         cout << "[state changed : " << itos(state) <<   "]" ;
                     }
-                    backup_state_debug  = state;
+                    prev_state  = state;
 
 
-                    int new_state=-1;
+                    int next_state=-1;
 
                     for(int i=0; i< sensor_fusion.size();i++)
                     {
@@ -563,41 +585,38 @@ if( (state == LEFT || state == RIGHT) && (doing_action_count == 0))
                             //blocked!
                             if((check_car_s > car_s) && ((check_car_s-car_s) < 30) )  
                             {
-                                    cout << "[block detected]" ;
+                                    cout << "[B]" ; //block detected!
 
-//XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX  max_speed= check_speed;
+                                    //max_speed= check_speed; //XXX ???
 
-                                    if( state == KEEP ) //XXXXXXX
+                                    if( state == KEEP ) 
                                     {
-                                            //net_state will be set in this function!
-                                            CONSIDER_ALTERNATIVES(new_state,1,1); 
+                                            //next_state will be set inside this function!
+                                            //consider both lanes. 
+                                            CONSIDER_ALTERNATIVES(next_state,1,1); 
                                             
-                                            switch(new_state)
+                                            switch(next_state)
                                             {
                                                 case LEFT:
-                                                     cout << "[left success:" <<  "old:" << lane << "  new:" << lane-1 << "]";
+                                                     cout << "[left success:" << "old:" << lane << "  new:" << lane-1 << "]";
                                                      lane -=1;
-doing_action_count = DOING_ACTION_COUNT_INIT;
-                                                     //CHANGE_STATE(KEEP);
+                                                     doing_action_count = DOING_ACTION_COUNT_INIT;
                                                      break;
 
                                                 case RIGHT:
-doing_action_count = DOING_ACTION_COUNT_INIT;
-                                                     cout << "[right success:" <<  "old:" << lane << "  new:" << lane+1 << "]";
+                                                     doing_action_count = DOING_ACTION_COUNT_INIT;
+                                                     cout << "[right success:" << "old:" << lane << "  new:" << lane+1 << "]";
                                                      lane +=1;
-                                                     //CHANGE_STATE(KEEP);
                                                      break;
 
                                                 case PRE_LEFT:
                                                 case PRE_RIGHT:
-pre_counter =  PRE_COUNTER_INIT ;
-                                                     //speed_change += -0.01; //blow
+                                                     pre_counter =  PRE_COUNTER_INIT ;
                                                      break;
 
                                                 case KEEP:
-                                                     //speed_change += -0.2;  //blow
-                                                     max_speed= check_speed;
-cout << "[max_speed changed:" << max_speed << "]";
+                                                     max_speed= check_speed;//try to follow the front car!
+                                                     cout << "[max_speed changed:" << max_speed << "]";
                                                      break;
                                                 default:
                                                      assert(0);
@@ -605,33 +624,33 @@ cout << "[max_speed changed:" << max_speed << "]";
                                                 
                                             } //switch
 
-                                    } //KEEP
+                                    } //if KEEP
 
                                     speed_change += -0.224;
             
-                                    break; //goto xx;
+                                    break; //goto out_of_for_loop;
 
-                            } //blocked
+                            } //if blocked
                         } //if( (d < (2+4*lane+2)) && (d > (2+4*lane-2)) ) //is it on the same lane?
-                    }
+                    }//for loop
 
-//xx:
-                    if( new_state != KEEP ) //XXXX
+//out_of_for_loop:
+                    //if next state is not KEEP, max_speed need to be turning back to original value.
+                    if( next_state != KEEP ) 
                         max_speed= MAX_SPEED;
 
                     if( state == PRE_LEFT )    
                     {
-                            int new_state=-1;
+                            int next_state=-1;
 
-                            CONSIDER_ALTERNATIVES( new_state , 1,0);
-                            switch(new_state)
+                            CONSIDER_ALTERNATIVES( next_state , 1,0); //only left
+                            switch(next_state)
                             {
                                 case LEFT:
                                      cout << "[left success(pre_left -> left):" <<  
                                                      "old:" << lane << "  new:" << lane-1 << "]";
                                      lane -=1;
-doing_action_count = DOING_ACTION_COUNT_INIT;
-                                     //CHANGE_STATE(KEEP);
+                                     doing_action_count = DOING_ACTION_COUNT_INIT;
                                      break;
 
                                 case PRE_LEFT:
@@ -652,18 +671,17 @@ doing_action_count = DOING_ACTION_COUNT_INIT;
                     }
                     else if( state == PRE_RIGHT )    
                     {
-                            int new_state;
+                            int next_state;
 
-                            CONSIDER_ALTERNATIVES( new_state , 0,1);
+                            CONSIDER_ALTERNATIVES( next_state , 0,1); //only right
                             
-                            switch(new_state)
+                            switch(next_state)
                             {
                                 case RIGHT:
                                      cout << "[right success(pre_right -> right):" <<  
                                                      "old:" << lane << "  new:" << lane+1 << "]";
                                      lane +=1;
-doing_action_count = DOING_ACTION_COUNT_INIT;
-                                     //CHANGE_STATE(KEEP);
+                                     doing_action_count = DOING_ACTION_COUNT_INIT;
                                      break;
 
                                 case PRE_RIGHT:
