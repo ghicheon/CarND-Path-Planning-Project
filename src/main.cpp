@@ -284,6 +284,8 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
             double closest_left_dist=999999;                                                \
             double closest_right_speed=0;                                                   \
             double closest_left_speed=0;                                                    \
+            double left_margin_max  = 0;                                                    \
+            double right_margin_max = 0;                                                    \
                                                                                             \
             for(int i=0; i< sensor_fusion.size();i++)                                       \
             {                                                                               \
@@ -378,7 +380,8 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
                 }                                                                           \
                 else                                                                        \
                 {                                                                           \
-                    next_state =  RIGHT;            /*default*/                             \
+                    /* the lane that has longer margin,it will be better! */                \
+                    next_state = (closest_right_dist > closest_left_dist) ? RIGHT:LEFT;     \
                 }                                                                           \
             }                                                                               \
             else if( (left_ok == 0) && (right_ok == 0) )                                    \
