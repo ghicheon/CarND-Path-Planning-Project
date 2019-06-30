@@ -16,12 +16,12 @@ I've been considered the [rubric points](https://review.udacity.com/#!/rubrics/1
 ---
 ## Writeup 
 
-###Compilation
+### Compilation
 #### The code compiles correctly.  Code must compile without errors with cmake and make.  Given that we've made CMakeLists.txt as general as possible, it's recommend that you do not change it unless you can guarantee that your changes will still compile on any platform.
 Yes. My code compiles without neither erros or warning.
 
 
-###Valid Trajectories
+### Valid Trajectories
 #### The car is able to drive at least 4.32 miles without incident..  The top right screen of the simulator shows the current/best miles driven without incident. Incidents include exceeding acceleration/jerk/speed, collision, and driving outside of the lanes. Each incident case is also listed below in more detail.  
 Sure.  Actually more than that. My car drives 26.23 miles without any in incident.    
 ("Outside of Lane" occured  at around 26.23 miles. However,It doesn't seem to be a big deal because it is just off the line a little bit for a while. )    
@@ -45,18 +45,25 @@ get_proper_speed is responsible for returning a proper speed.
 Yes. Actually, I used the spline of the lecture and followed the formula of the video in order to avoid jerk and acceleration limit.
 
 #### Car does not have collisions.  The car must not come into contact with any of the other cars on the road.
-Definitelly. The car drives 32 miles without any collisions(I stopped it).   
+Definitelly. The car drives 32 miles without any collisions(I stopped it).     
+line 589 ~ 636  :  if my car is blocked. slow down and consider lane change.
+
+Line 273: CONSIDER_ALTERNATIVES() is core routine for selecting the lane without collisions.   
+
+Line 308 ~ 311: check if it blocked on the right lane,
+Line 312 ~ 315: check if there is enough free space on the right lane,
 
 #### The car stays in its lane, except for the time between changing lanes.  The car doesn't spend more than a 3 second length out side the lane lanes during changing lanes, and every other time the car stays inside one of the 3 lanes on the right hand side of the road.
 Yes. My car drives 26.23 miles without "Outside of lane".
 
 #### The car is able to change lanes.  The car is able to smoothly change lanes when it makes sense to do so, such as when behind a slower moving car and an adjacent lane is clear of other traffic.
 Yes.   
-I considered free space of the left lane and the right lane.
-Also, speed is important. If there are 2 options(left&right), speedy lane is selected.     
+
+In line 361 ~ 397, I considered free space of the left lane and the right lane.  Also, speed is important. If there are 2 options(left&right), speedy lane is selected.     
+
 In blocking situation,when changing lane can't be done due to adjacent cars, the state is changed to PRE\_LEFT or PRE\_RIGHT.   
 
-###Reflection
+### Reflection
 #### The code model for generating paths is described in detail. This can be part of the README or a separate doc labeled "Model Documentation".
 
 ![alt text][state_diagram]  
@@ -77,8 +84,13 @@ In LEFT/RIGHT,
 
 
 
-Suggestions to Make Your Project Stand Out!
+### Suggestions to Make Your Project Stand Out!
 #### Create a path planner that performs optimized lane changing, this means that the car only changes into a lane that improves its forward progress.
+* I get the left/right lane speed using the closest car.  
+  If I consider some range from my car, It could be better.
+* In line 384, I consider the cloest car for free space.
+  If considered the front space from my car, the result will be more accurate.
+* One lane change is only considered, If considered more than 2 lanes, the path will be optimized. For example,even if there is a car next to me, the next after next lane might be free.
 
 
 
