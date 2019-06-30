@@ -4,7 +4,7 @@
 
 ---
 
-**Build a Traffic Sign Recognition Project**
+**Build a Path Planning Project**
 
 The goals / steps of this project are the following:
 * In this project, your goal is to design a path planner that is able to create smooth, safe paths for the car to follow along a 3 lane highway with traffic. 
@@ -16,7 +16,7 @@ The goals / steps of this project are the following:
 [state_diagram]: ./state_diagram.png "STATE DIAGRAM"
 
 ## Rubric Points
-### I've been considered the [rubric points](https://review.udacity.com/#!/rubrics/481/view) 
+### I've been considered the [rubric points](https://review.udacity.com/#!/rubrics/1971/view)
 
 ---
 ### Writeup 
