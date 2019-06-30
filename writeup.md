@@ -1,12 +1,7 @@
 # **Path Planning** 
 
-## Writeup
 
----
-
-**Build a Path Planning Project**
-
-The goals / steps of this project are the following:
+## The goals / steps of this project are the following:
 * In this project, your goal is to design a path planner that is able to create smooth, safe paths for the car to follow along a 3 lane highway with traffic. 
 * A successful path planner will be able to keep inside its lane, avoid hitting other cars, and pass slower moving traffic all by using localization, sensor fusion, and map data.
 
@@ -16,17 +11,17 @@ The goals / steps of this project are the following:
 [state_diagram]: ./state_diagram.png "STATE DIAGRAM"
 
 ## Rubric Points
-### I've been considered the [rubric points](https://review.udacity.com/#!/rubrics/1971/view)
+I've been considered the [rubric points](https://review.udacity.com/#!/rubrics/1971/view)
 
 ---
-### Writeup 
+## Writeup 
 
-Compilation
+###Compilation
 #### The code compiles correctly.  Code must compile without errors with cmake and make.  Given that we've made CMakeLists.txt as general as possible, it's recommend that you do not change it unless you can guarantee that your changes will still compile on any platform.
 Yes. My code compiles without neither erros or warning.
 
 
-Valid Trajectories
+###Valid Trajectories
 #### The car is able to drive at least 4.32 miles without incident..  The top right screen of the simulator shows the current/best miles driven without incident. Incidents include exceeding acceleration/jerk/speed, collision, and driving outside of the lanes. Each incident case is also listed below in more detail.  
 Sure.  Actually more than that. My car drives 26.23 miles without any in incident.    
 ("Outside of Lane" occured  at around 26.23 miles. However,It doesn't seem to be a big deal because it is just off the line a little bit for a while. )    
@@ -61,7 +56,7 @@ I considered free space of the left lane and the right lane.
 Also, speed is important. If there are 2 options(left&right), speedy lane is selected.     
 In blocking situation,when changing lane can't be done due to adjacent cars, the state is changed to PRE\_LEFT or PRE\_RIGHT.   
 
-Reflection
+###Reflection
 #### The code model for generating paths is described in detail. This can be part of the README or a separate doc labeled "Model Documentation".
 
 ![alt text][state_diagram]  
