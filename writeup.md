@@ -18,7 +18,7 @@ I've been considered the [rubric points](https://review.udacity.com/#!/rubrics/1
 
 ### Compilation
 #### The code compiles correctly.  Code must compile without errors with cmake and make.  Given that we've made CMakeLists.txt as general as possible, it's recommend that you do not change it unless you can guarantee that your changes will still compile on any platform.
-Yes. My code compiles without neither errors nor warnings.
+Yes. My code compiles without errors or warnings.
 
 
 ### Valid Trajectories
