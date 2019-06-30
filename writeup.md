@@ -11,7 +11,7 @@
 [state_diagram]: ./state_diagram.png "STATE DIAGRAM"
 
 ## Rubric Points
-I've been considered the [rubric points](https://review.udacity.com/#!/rubrics/1971/view)
+I've been considering the [rubric points](https://review.udacity.com/#!/rubrics/1971/view)
 
 ---
 ## Writeup 
