@@ -18,18 +18,15 @@ I've been considered the [rubric points](https://review.udacity.com/#!/rubrics/1
 
 ### Compilation
 #### The code compiles correctly.  Code must compile without errors with cmake and make.  Given that we've made CMakeLists.txt as general as possible, it's recommend that you do not change it unless you can guarantee that your changes will still compile on any platform.
-Yes. My code compiles without neither erros or warning.
+Yes. My code compiles without neither errors nor warnings.
 
 
 ### Valid Trajectories
 #### The car is able to drive at least 4.32 miles without incident..  The top right screen of the simulator shows the current/best miles driven without incident. Incidents include exceeding acceleration/jerk/speed, collision, and driving outside of the lanes. Each incident case is also listed below in more detail.  
 Sure.  Actually more than that. My car drives 26.23 miles without any in incident.    
 ("Outside of Lane" occured  at around 26.23 miles. However,It doesn't seem to be a big deal because it is just off the line a little bit for a while. )    
-I plan to upload the video. You will find it below link.
-[Path_plainning_project_by Ghicheon](youtube link)
-
-
-
+I uploaded the video on youtube. You will find it below.
+[Path_plainning_project youtube link](https://www.youtube.com/watch?v=t9ykOJeLomI)
 
 
 #### The car drives according to the speed limit.  The car doesn't drive faster than the speed limit. Also the car isn't driving much slower than speed limit unless obstructed by traffic.

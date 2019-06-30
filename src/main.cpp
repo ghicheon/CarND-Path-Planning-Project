@@ -14,37 +14,38 @@
 
 /*
  * PRE_LEFT,PRE_RIGHT states have time limit.
- * If time is exceeded,I must be better to consider another way.
+ * If time is exceeded,It must be better to consider an another way.
  */
 #define PRE_COUNTER_INIT    (50*5)    //5 seconds  since the car moves 50 times a second.
 
 /*
  * In pre states, the car is slowing down. but It has time limit, if not, the car will stop.
  */
-#define PRE_COUNTER_DEC_SPEED_COUNT     50   //1 seconds 
+#define PRE_COUNTER_DEC_SPEED_COUNT     50   //1 second 
 
 /*
- * Well, spline is used for changing lane. it took some time changing line in the state LEFT,RIGHT.
+ * Well, spline is used for changing lane. It took some time to change the lane in the state LEFT/RIGHT.
  * After it, the state will be KEEP.
  */
 #define DOING_ACTION_COUNT_INIT  (50*4)       //4 seconds
 
 /*
- * When changing lane, there must be no cars when ego car is on the way to the next lane.
+ * When changing the lane, there must be no car when my car is on the way to the next lane.
  */
 #define FRONT_MARGIN 35
 #define BACK_MARGIN 10
 
 
 /*
- * When there is no car ahead, ego car sometimes stops  due to PRE_LEFT or PRE_RIGHT.
- * because these states decress speed. this variable is trying to avoid it!
+ * In PRE_LEFT/PRE_RIGHT, 
+ * If the speed keeps decreasing. the car will stop.this variable pre_counter is trying to avoid it!
+ * when the limit reaches, the state will be KEEP.
  */
 int pre_counter = 0;
 
 /*  
- * In the state LEFT, this variable is set to DOING_ACTION_COUNT_INIT.
- * This value is decreasing by time. when it reaches 0, the state will be KEEP.
+ * In the state LEFT/RIGHT, this variable is set to DOING_ACTION_COUNT_INIT.
+ * This value is decreasing as time goes on. When it reaches 0, the state will be KEEP.
  */
 int doing_action_count=0;
 
@@ -68,9 +69,8 @@ char * itos(int i)
 
 int state = KEEP;
 
-//it's just for find out if state is changed.
-//PRE_RIGHT:for printing at first.
-int prev_state = PRE_RIGHT; 
+//it's just for finding out if the state is changed(for debugging).
+int prev_state = PRE_RIGHT; //PRE_RIGHT:for printing at first.
 
 using namespace std;
 
@@ -242,6 +242,10 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
 
 
 
+/*
+ * For changing the state, this must be used. it prints debug messages.
+ * Don't do like this:   state = KEEP
+ */
 #define CHANGE_STATE(s)                             \
         {                                                                    \
                 if( state != s ){                                            \
@@ -253,14 +257,14 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
         }
 
 /*
- * next_state: will be filled with next state.
+ * next_state: will be filled with a next state.
  * consider_left: consider left lane 
  * consider_right: consider right lane 
  *
- * return next state
+ * return; next state
  *
- * - this function make a choice by using lane lane speed and right lane speed.
- *   when there is 2 options, It must better to choose a speedy lane!.
+ * - this function make a choice by using left lane speed and right lane speed.
+ *   When there is 2 options, It must better to choose a speedy lane!.
  * - lane speed is measured by the closest car.
  *
  * 
@@ -270,7 +274,7 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
  * (https://stackoverflow.com/questions/29944985/is-there-a-way-to-pass-auto-as-an-argument-in-c)
  * But I am a lazy guy & I don't want to bother reviwers.I decided to write it as a macro function.
  */
-#define CONSIDER_ALTERNATIVES( next_state , consider_left,consider_right)                    \
+#define CONSIDER_ALTERNATIVES( next_state , consider_left,consider_right)                   \
         do                                                                                  \
         {                                                                                   \
             int left_ok = (lane != 0) ? 1 : 0;                                              \
@@ -406,8 +410,8 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
 /* 
  * speed must not be exceeding speed limit!
  *
- *  max_speed: soft requirement. when blocking car is front and there is no options 
- *             it will be better to following the front car!!!
+ *  max_speed: soft requirement. when a blocking car is front and there is no options,
+ *             it will be better to follow the front car!!!
  *  MAX_SPEED: hard requirement!
  */
 double get_proper_speed(double spd, double speed_change) 
@@ -590,7 +594,7 @@ int main() {
                             {
                                     cout << "[B]" ; //block detected!
 
-                                    //max_speed= check_speed; //XXX ???
+                                    //max_speed= check_speed; //XXX it might better? not tested yet.
 
                                     if( state == KEEP ) 
                                     {
